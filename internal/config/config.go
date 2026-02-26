@@ -45,6 +45,9 @@ func Load() (*Config, error) {
 	if cfg.OpenRouterAPIKey == "" {
 		return nil, fmt.Errorf("OPENROUTER_API_KEY is required")
 	}
+	if len(cfg.OpenRouterAllowedModels) == 0 {
+		return nil, fmt.Errorf("OPENROUTER_ALLOWED_MODELS is required - please specify at least one model in .env")
+	}
 
 	// Ensure workspace directory exists
 	if err := os.MkdirAll(cfg.WorkspaceDir, 0755); err != nil {
@@ -81,14 +84,7 @@ func parseAllowedUsers(value string) []int64 {
 
 func parseAllowedModels(value string) []string {
 	if value == "" {
-		// Default free models (updated 2026-02-26)
-		return []string{
-			"google/gemini-2.0-flash-exp:free",
-			"meta-llama/llama-3.3-70b-instruct:free",
-			"qwen/qwen3-next-80b-a3b-instruct:free",
-			"nousresearch/hermes-3-llama-3.1-405b:free",
-			"mistralai/mistral-small-3.1-24b-instruct:free",
-		}
+		return nil // No defaults - must be explicitly configured
 	}
 	
 	parts := strings.Split(value, ",")
