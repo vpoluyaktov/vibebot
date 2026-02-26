@@ -20,6 +20,9 @@ type Config struct {
 	
 	// Workspace
 	WorkspaceDir string
+	
+	// Logging
+	LogLevel string
 }
 
 // Load loads configuration from environment variables
@@ -30,6 +33,7 @@ func Load() (*Config, error) {
 		OpenRouterAPIKey:     os.Getenv("OPENROUTER_API_KEY"),
 		OpenRouterModel:      getEnvOrDefault("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet"),
 		WorkspaceDir:         getEnvOrDefault("WORKSPACE_DIR", getDefaultWorkspace()),
+		LogLevel:             getEnvOrDefault("LOG_LEVEL", "info"),
 	}
 
 	// Validate required fields

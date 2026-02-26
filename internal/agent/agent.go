@@ -3,9 +3,9 @@ package agent
 import (
 	"context"
 	"fmt"
-	"log"
 
 	"github.com/vpoluyaktov/vibebot/internal/llm"
+	"github.com/vpoluyaktov/vibebot/internal/logger"
 	"github.com/vpoluyaktov/vibebot/internal/memory"
 	"github.com/vpoluyaktov/vibebot/internal/tools"
 )
@@ -30,7 +30,7 @@ func New(provider llm.Provider, mem *memory.Memory, toolRegistry *tools.Registry
 
 // ProcessMessage handles an incoming message and generates a response
 func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string) (string, error) {
-	log.Printf("Processing message from chat %d: %s", chatID, message)
+	logger.Debug("Processing message from chat %d: %s", chatID, message)
 
 	// Add chat_id to context for tools
 	ctx = context.WithValue(ctx, "chat_id", chatID)
@@ -38,7 +38,7 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 	// Load memory context
 	memoryContent, err := a.memory.LoadMemory()
 	if err != nil {
-		log.Printf("Warning: failed to load memory: %v", err)
+		logger.Warn("Failed to load memory: %v", err)
 		memoryContent = ""
 	}
 
@@ -83,12 +83,12 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 
 		// Execute each tool call
 		for _, toolCall := range response.ToolCalls {
-			log.Printf("Executing tool: %s", toolCall.Function.Name)
+			logger.Debug("Executing tool: %s", toolCall.Function.Name)
 
 			result, err := a.tools.Execute(ctx, toolCall.Function.Name, toolCall.Function.Arguments)
 			if err != nil {
 				result = fmt.Sprintf("Error: %v", err)
-				log.Printf("Tool execution error: %v", err)
+				logger.Error("Tool execution error: %v", err)
 			}
 
 			// Add tool result as a message
@@ -109,7 +109,7 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 
 	// Log conversation to history
 	if err := a.memory.LogConversation(chatID, message, finalResponse); err != nil {
-		log.Printf("Warning: failed to log conversation: %v", err)
+		logger.Warn("Failed to log conversation: %v", err)
 	}
 
 	return finalResponse, nil

@@ -3,10 +3,10 @@ package telegram
 import (
 	"context"
 	"fmt"
-	"log"
 	"strconv"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/vpoluyaktov/vibebot/internal/logger"
 )
 
 // MessageHandler is called when a message is received
@@ -26,12 +26,12 @@ func New(token string, handler MessageHandler, allowedUsers []int64) (*Gateway, 
 		return nil, fmt.Errorf("failed to create bot: %w", err)
 	}
 
-	log.Printf("Authorized on account %s", bot.Self.UserName)
+	logger.Info("Authorized on account %s", bot.Self.UserName)
 	
 	if len(allowedUsers) > 0 {
-		log.Printf("User whitelist enabled: %v", allowedUsers)
+		logger.Info("User whitelist enabled: %v", allowedUsers)
 	} else {
-		log.Printf("Warning: No user whitelist configured - accepting messages from all users")
+		logger.Warn("No user whitelist configured - accepting messages from all users")
 	}
 
 	return &Gateway{
@@ -69,28 +69,30 @@ func (g *Gateway) handleMessage(ctx context.Context, msg *tgbotapi.Message) {
 	userID := msg.From.ID
 	text := msg.Text
 
-	log.Printf("[%d] %s (ID: %d): %s", chatID, msg.From.UserName, userID, text)
+	logger.Info("[%d] %s (ID: %d): %s", chatID, msg.From.UserName, userID, text)
 
 	// Check if user is allowed
 	if !g.isUserAllowed(userID) {
-		log.Printf("Unauthorized access attempt from user %d (%s)", userID, msg.From.UserName)
+		logger.Warn("Unauthorized access attempt from user %d (%s)", userID, msg.From.UserName)
 		response := "⛔ Unauthorized. This bot is private.\n\nYour Telegram ID: " + strconv.FormatInt(userID, 10)
 		if err := g.SendMessage(chatID, response); err != nil {
-			log.Printf("Error sending unauthorized message: %v", err)
+			logger.Error("Error sending unauthorized message: %v", err)
 		}
 		return
 	}
 
+	logger.Debug("Processing message from chat %d: %s", chatID, text)
+
 	// Call the handler
 	response, err := g.handler(ctx, chatID, text)
 	if err != nil {
-		log.Printf("Error handling message: %v", err)
+		logger.Error("Error handling message: %v", err)
 		response = fmt.Sprintf("Error: %v", err)
 	}
 
 	// Send the response
 	if err := g.SendMessage(chatID, response); err != nil {
-		log.Printf("Error sending message: %v", err)
+		logger.Error("Error sending message: %v", err)
 	}
 }
 
