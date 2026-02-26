@@ -129,10 +129,18 @@ func (g *Gateway) isUserAllowed(userID int64) bool {
 
 // SendMessage sends a text message to a chat
 func (g *Gateway) SendMessage(chatID int64, text string) error {
+	// Try sending with Markdown first
 	msg := tgbotapi.NewMessage(chatID, text)
 	msg.ParseMode = "Markdown"
 	
 	_, err := g.bot.Send(msg)
+	if err != nil {
+		// If Markdown parsing fails, fall back to plain text
+		logger.Warn("Markdown parse failed, falling back to plain text: %v", err)
+		msg.ParseMode = ""
+		_, err = g.bot.Send(msg)
+	}
+	
 	return err
 }
 
