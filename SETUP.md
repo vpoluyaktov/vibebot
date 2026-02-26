@@ -56,16 +56,25 @@ nano .env  # or use your preferred editor
 4. Update these values:
 ```env
 TELEGRAM_TOKEN=your_telegram_bot_token_here
+TELEGRAM_ALLOWED_USERS=your_telegram_user_id
 OPENROUTER_API_KEY=your_openrouter_api_key_here
 OPENROUTER_MODEL=anthropic/claude-sonnet-4.5
 WORKSPACE_DIR=/home/ubuntu/.vibebot/workspace
 ```
+
+**Finding Your Telegram User ID:**
+1. Message [@userinfobot](https://t.me/userinfobot) on Telegram
+2. It will reply with your user ID (e.g., `339899302`)
+3. Add this ID to `TELEGRAM_ALLOWED_USERS`
+4. For multiple users, separate with commas: `339899302,123456789`
+5. Leave empty to allow all users (not recommended)
 
 ### Configuration Options
 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `TELEGRAM_TOKEN` | Bot token from @BotFather | Required |
+| `TELEGRAM_ALLOWED_USERS` | Comma-separated user IDs | Empty (allow all) |
 | `OPENROUTER_API_KEY` | OpenRouter API key | Required |
 | `OPENROUTER_MODEL` | Model to use | `anthropic/claude-3.5-sonnet` |
 | `WORKSPACE_DIR` | Where bot stores data | `~/.vibebot/workspace` |
@@ -213,9 +222,10 @@ sudo journalctl -u vibebot -f
 
 - **Never commit `.env`** - It's in `.gitignore` by default
 - **Keep your tokens secret** - Don't share them publicly
-- **Restrict bot access** - Consider adding user whitelisting
+- **Use user whitelisting** - Set `TELEGRAM_ALLOWED_USERS` to restrict access
 - **Review command execution** - The bot can run shell commands
 - **Monitor API usage** - Check your OpenRouter/LLM provider bills
+- **Unauthorized access** - Users not in whitelist will see their ID and be blocked
 
 ## Getting Help
 

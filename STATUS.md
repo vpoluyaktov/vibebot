@@ -25,6 +25,7 @@ vibebot is now a working AI assistant bot with core functionality implemented.
 - [x] `message` - Send messages to users
 
 ### ✅ Safety Features
+- [x] User authentication/whitelisting (TELEGRAM_ALLOWED_USERS)
 - [x] Dangerous command blocking (rm -rf, format, shutdown, etc.)
 - [x] Command timeout (60 seconds)
 - [x] Output truncation (10k characters)
@@ -52,8 +53,7 @@ vibebot is now a working AI assistant bot with core functionality implemented.
 - [ ] Web search tool (using DuckDuckGo or similar)
 - [ ] Web fetch tool (extract content from URLs)
 - [ ] Cron/scheduling system for reminders
-- [ ] Multi-user session management
-- [ ] User authentication/whitelisting
+- [ ] Multi-user session management (per-user workspaces)
 
 #### Medium Priority
 - [ ] Self-modification capabilities (code generation tools)
@@ -73,7 +73,7 @@ vibebot is now a working AI assistant bot with core functionality implemented.
 
 ### Minor
 - [ ] No rate limiting (could hit API limits)
-- [ ] No user isolation (all users share workspace)
+- [ ] No per-user workspaces (all allowed users share workspace)
 - [ ] No request queuing (sequential processing only)
 - [ ] Tool execution is synchronous (no parallelization)
 
@@ -144,9 +144,10 @@ vibebot is now a working AI assistant bot with core functionality implemented.
 - ✅ Added shell execution tool
 - ✅ Enhanced memory system with automatic logging
 - ✅ Created comprehensive documentation
-- ✅ Set up new Telegram bot
+- ✅ Set up new Telegram bot (@strangervp_vibebot)
 - ✅ Configured OpenRouter integration
 - ✅ Created setup scripts and guides
+- ✅ Implemented user authentication/whitelisting
 
 ## Comparison with nanobot
 
@@ -156,6 +157,7 @@ vibebot is now a working AI assistant bot with core functionality implemented.
 | Architecture | Clean, modular | Complex, many dependencies |
 | Memory System | 2-layer (MEMORY.md + HISTORY.md) | Similar |
 | Tool System | Custom registry | Plugin-based |
+| User Whitelisting | ✅ Implemented | ✅ Implemented |
 | LLM Providers | OpenRouter | Multiple (OpenRouter, Anthropic, etc.) |
 | Gateways | Telegram | Telegram, Discord, CLI |
 | Cron/Scheduling | Planned | ✅ Implemented |

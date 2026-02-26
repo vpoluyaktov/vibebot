@@ -4,12 +4,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 )
 
 // Config holds the application configuration
 type Config struct {
 	// Telegram
-	TelegramToken string
+	TelegramToken    string
+	TelegramAllowedUsers []int64
 	
 	// OpenRouter
 	OpenRouterAPIKey string
@@ -22,10 +25,11 @@ type Config struct {
 // Load loads configuration from environment variables
 func Load() (*Config, error) {
 	cfg := &Config{
-		TelegramToken:    os.Getenv("TELEGRAM_TOKEN"),
-		OpenRouterAPIKey: os.Getenv("OPENROUTER_API_KEY"),
-		OpenRouterModel:  getEnvOrDefault("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet"),
-		WorkspaceDir:     getEnvOrDefault("WORKSPACE_DIR", getDefaultWorkspace()),
+		TelegramToken:        os.Getenv("TELEGRAM_TOKEN"),
+		TelegramAllowedUsers: parseAllowedUsers(os.Getenv("TELEGRAM_ALLOWED_USERS")),
+		OpenRouterAPIKey:     os.Getenv("OPENROUTER_API_KEY"),
+		OpenRouterModel:      getEnvOrDefault("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet"),
+		WorkspaceDir:         getEnvOrDefault("WORKSPACE_DIR", getDefaultWorkspace()),
 	}
 
 	// Validate required fields
@@ -42,6 +46,31 @@ func Load() (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func parseAllowedUsers(value string) []int64 {
+	if value == "" {
+		return nil // Empty means allow all
+	}
+	
+	parts := strings.Split(value, ",")
+	users := make([]int64, 0, len(parts))
+	
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		
+		userID, err := strconv.ParseInt(part, 10, 64)
+		if err != nil {
+			continue // Skip invalid IDs
+		}
+		
+		users = append(users, userID)
+	}
+	
+	return users
 }
 
 func getEnvOrDefault(key, defaultValue string) string {

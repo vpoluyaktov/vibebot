@@ -14,22 +14,30 @@ type MessageHandler func(ctx context.Context, chatID int64, message string) (str
 
 // Gateway handles Telegram bot communication
 type Gateway struct {
-	bot     *tgbotapi.BotAPI
-	handler MessageHandler
+	bot          *tgbotapi.BotAPI
+	handler      MessageHandler
+	allowedUsers []int64
 }
 
 // New creates a new Telegram gateway
-func New(token string, handler MessageHandler) (*Gateway, error) {
+func New(token string, handler MessageHandler, allowedUsers []int64) (*Gateway, error) {
 	bot, err := tgbotapi.NewBotAPI(token)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create bot: %w", err)
 	}
 
 	log.Printf("Authorized on account %s", bot.Self.UserName)
+	
+	if len(allowedUsers) > 0 {
+		log.Printf("User whitelist enabled: %v", allowedUsers)
+	} else {
+		log.Printf("Warning: No user whitelist configured - accepting messages from all users")
+	}
 
 	return &Gateway{
-		bot:     bot,
-		handler: handler,
+		bot:          bot,
+		handler:      handler,
+		allowedUsers: allowedUsers,
 	}, nil
 }
 
@@ -58,9 +66,20 @@ func (g *Gateway) Start(ctx context.Context) error {
 // handleMessage processes an incoming message
 func (g *Gateway) handleMessage(ctx context.Context, msg *tgbotapi.Message) {
 	chatID := msg.Chat.ID
+	userID := msg.From.ID
 	text := msg.Text
 
-	log.Printf("[%d] %s: %s", chatID, msg.From.UserName, text)
+	log.Printf("[%d] %s (ID: %d): %s", chatID, msg.From.UserName, userID, text)
+
+	// Check if user is allowed
+	if !g.isUserAllowed(userID) {
+		log.Printf("Unauthorized access attempt from user %d (%s)", userID, msg.From.UserName)
+		response := "⛔ Unauthorized. This bot is private.\n\nYour Telegram ID: " + strconv.FormatInt(userID, 10)
+		if err := g.SendMessage(chatID, response); err != nil {
+			log.Printf("Error sending unauthorized message: %v", err)
+		}
+		return
+	}
 
 	// Call the handler
 	response, err := g.handler(ctx, chatID, text)
@@ -73,6 +92,23 @@ func (g *Gateway) handleMessage(ctx context.Context, msg *tgbotapi.Message) {
 	if err := g.SendMessage(chatID, response); err != nil {
 		log.Printf("Error sending message: %v", err)
 	}
+}
+
+// isUserAllowed checks if a user is in the whitelist
+func (g *Gateway) isUserAllowed(userID int64) bool {
+	// If no whitelist configured, allow all users
+	if len(g.allowedUsers) == 0 {
+		return true
+	}
+	
+	// Check if user is in the whitelist
+	for _, allowedID := range g.allowedUsers {
+		if allowedID == userID {
+			return true
+		}
+	}
+	
+	return false
 }
 
 // SendMessage sends a text message to a chat
