@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -17,6 +18,7 @@ type OpenRouter struct {
 	apiKey string
 	model  string
 	client *http.Client
+	mu     sync.RWMutex
 }
 
 // NewOpenRouter creates a new OpenRouter provider
@@ -64,8 +66,27 @@ type openRouterResponse struct {
 	} `json:"usage"`
 }
 
+// SetModel updates the model name (thread-safe)
+func (o *OpenRouter) SetModel(model string) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.model = model
+}
+
+// GetModel returns the current model name (thread-safe)
+func (o *OpenRouter) GetModel() string {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	return o.model
+}
+
 // Chat sends messages to OpenRouter and returns the response
 func (o *OpenRouter) Chat(ctx context.Context, messages []Message, tools []Tool) (*Response, error) {
+	// Get current model (thread-safe)
+	o.mu.RLock()
+	currentModel := o.model
+	o.mu.RUnlock()
+	
 	// Convert messages to generic format
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -83,7 +104,7 @@ func (o *OpenRouter) Chat(ctx context.Context, messages []Message, tools []Tool)
 	}
 
 	reqBody := openRouterRequest{
-		Model:    o.model,
+		Model:    currentModel,
 		Messages: apiMessages,
 		Tools:    tools,
 	}

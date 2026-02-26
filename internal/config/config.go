@@ -15,8 +15,9 @@ type Config struct {
 	TelegramAllowedUsers []int64
 	
 	// OpenRouter
-	OpenRouterAPIKey string
-	OpenRouterModel  string
+	OpenRouterAPIKey    string
+	OpenRouterModel     string
+	OpenRouterAllowedModels []string
 	
 	// Workspace
 	WorkspaceDir string
@@ -28,12 +29,13 @@ type Config struct {
 // Load loads configuration from environment variables
 func Load() (*Config, error) {
 	cfg := &Config{
-		TelegramToken:        os.Getenv("TELEGRAM_TOKEN"),
-		TelegramAllowedUsers: parseAllowedUsers(os.Getenv("TELEGRAM_ALLOWED_USERS")),
-		OpenRouterAPIKey:     os.Getenv("OPENROUTER_API_KEY"),
-		OpenRouterModel:      getEnvOrDefault("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet"),
-		WorkspaceDir:         getEnvOrDefault("WORKSPACE_DIR", getDefaultWorkspace()),
-		LogLevel:             getEnvOrDefault("LOG_LEVEL", "info"),
+		TelegramToken:           os.Getenv("TELEGRAM_TOKEN"),
+		TelegramAllowedUsers:    parseAllowedUsers(os.Getenv("TELEGRAM_ALLOWED_USERS")),
+		OpenRouterAPIKey:        os.Getenv("OPENROUTER_API_KEY"),
+		OpenRouterModel:         getEnvOrDefault("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet"),
+		OpenRouterAllowedModels: parseAllowedModels(os.Getenv("OPENROUTER_ALLOWED_MODELS")),
+		WorkspaceDir:            getEnvOrDefault("WORKSPACE_DIR", getDefaultWorkspace()),
+		LogLevel:                getEnvOrDefault("LOG_LEVEL", "info"),
 	}
 
 	// Validate required fields
@@ -75,6 +77,29 @@ func parseAllowedUsers(value string) []int64 {
 	}
 	
 	return users
+}
+
+func parseAllowedModels(value string) []string {
+	if value == "" {
+		// Default free models
+		return []string{
+			"google/gemini-2.0-flash-exp:free",
+			"meta-llama/llama-3.3-70b-instruct:free",
+			"qwen/qwen-2.5-72b-instruct:free",
+		}
+	}
+	
+	parts := strings.Split(value, ",")
+	models := make([]string, 0, len(parts))
+	
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			models = append(models, part)
+		}
+	}
+	
+	return models
 }
 
 func getEnvOrDefault(key, defaultValue string) string {
