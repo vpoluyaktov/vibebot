@@ -44,6 +44,8 @@ func New(token string, handler MessageHandler, allowedUsers []int64) (*Gateway, 
 		{Command: "model", Description: "Show/switch LLM model"},
 		{Command: "models", Description: "List available models"},
 		{Command: "help", Description: "Show available commands"},
+		{Command: "projects", Description: "List existing projects"},
+		{Command: "project", Description: "Switch between projects or create/delete projects"},
 	}
 	
 	cfg := tgbotapi.NewSetMyCommands(commands...)
