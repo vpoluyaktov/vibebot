@@ -194,9 +194,9 @@ func (a *Agent) handleModelCommand(message string) (string, error) {
 		
 		for i, model := range allowed {
 			if model == current {
-				response.WriteString(fmt.Sprintf("%d. ✅ `%s` _(current)_\n", i+1, model))
+				response.WriteString(fmt.Sprintf("%d. `%s` ✅\n", i+1, model))
 			} else {
-				response.WriteString(fmt.Sprintf("%d.    `%s`\n", i+1, model))
+				response.WriteString(fmt.Sprintf("%d. `%s`\n", i+1, model))
 			}
 		}
 		
