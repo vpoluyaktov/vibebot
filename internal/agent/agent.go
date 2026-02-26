@@ -16,19 +16,21 @@ const maxHistoryMessages = 50 // Maximum messages to include in context
 
 // Agent represents the core AI agent
 type Agent struct {
-	llm      llm.Provider
-	memory   *memory.Memory
-	tools    *tools.Registry
-	sessions *session.Manager
+	llm       llm.Provider
+	memory    *memory.Memory
+	tools     *tools.Registry
+	sessions  *session.Manager
+	modelName string
 }
 
 // New creates a new Agent instance
-func New(provider llm.Provider, mem *memory.Memory, toolRegistry *tools.Registry, sessionMgr *session.Manager) *Agent {
+func New(provider llm.Provider, mem *memory.Memory, toolRegistry *tools.Registry, sessionMgr *session.Manager, modelName string) *Agent {
 	return &Agent{
-		llm:      provider,
-		memory:   mem,
-		tools:    toolRegistry,
-		sessions: sessionMgr,
+		llm:       provider,
+		memory:    mem,
+		tools:     toolRegistry,
+		sessions:  sessionMgr,
+		modelName: modelName,
 	}
 }
 
@@ -53,8 +55,13 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 		return "🤖 **vibebot** - AI Assistant\n\n" +
 			"**Commands:**\n" +
 			"/new - Start a new conversation (clears context)\n" +
+			"/model list - Show current LLM model\n" +
 			"/help - Show this help message\n\n" +
 			"Just send me a message and I'll help you!", nil
+	}
+
+	if message == "/model list" || message == "/model" {
+		return fmt.Sprintf("🤖 **Current Model**\n\n`%s`", a.modelName), nil
 	}
 
 	// Get or create session for this chat
