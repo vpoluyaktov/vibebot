@@ -110,7 +110,14 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 		// Call LLM with available tools
 		response, err := a.llm.Chat(ctx, messages, a.tools.GetDefinitions())
 		if err != nil {
-			return "", fmt.Errorf("LLM error: %w", err)
+			// Log the error and return a user-friendly message
+			logger.Error("LLM API error (iteration %d): %v", i+1, err)
+			return "⚠️ I encountered an error communicating with the AI model. This might be due to rate limiting or temporary service issues. Please try again in a moment.", fmt.Errorf("LLM error: %w", err)
+		}
+
+		// Clean response content from XML artifacts (some models output <tool_call> tags)
+		if response.Content != "" {
+			response.Content = cleanXMLArtifacts(response.Content)
 		}
 
 		// If no tool calls, we're done
@@ -272,4 +279,38 @@ func findModelsByPartialName(models []string, search string) []string {
 	}
 	
 	return matches
+}
+
+// cleanXMLArtifacts removes XML-style tool call tags that some models incorrectly output
+func cleanXMLArtifacts(content string) string {
+	// Remove <tool_call>...</tool_call> tags and their content
+	// This handles cases where models output XML instead of using proper JSON tool calls
+	content = strings.ReplaceAll(content, "<tool_call>", "")
+	content = strings.ReplaceAll(content, "</tool_call>", "")
+	
+	// Also clean up any stray JSON that might be in the content
+	// (some models put JSON outside of proper tool_calls structure)
+	if strings.Contains(content, `{"name":`) && strings.Contains(content, `"arguments":`) {
+		// If content looks like it contains tool call JSON, strip it
+		lines := strings.Split(content, "\n")
+		var cleaned []string
+		inJSON := false
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "{") && strings.Contains(trimmed, `"name"`) {
+				inJSON = true
+				continue
+			}
+			if inJSON && strings.HasPrefix(trimmed, "}") {
+				inJSON = false
+				continue
+			}
+			if !inJSON {
+				cleaned = append(cleaned, line)
+			}
+		}
+		content = strings.Join(cleaned, "\n")
+	}
+	
+	return strings.TrimSpace(content)
 }
