@@ -27,14 +27,15 @@ vibebot/
     └── memory/           # Persistent memory files
 ```
 
-## Features (Planned)
+## Features
 
 - [x] Project initialization
-- [ ] Core agent loop
-- [ ] LLM provider integration (OpenAI, Anthropic, etc.)
+- [x] Core agent loop
+- [x] LLM provider integration (OpenRouter)
+- [x] Telegram gateway
+- [x] Two-layer memory system (MEMORY.md + HISTORY.md)
+- [x] Clean, modular architecture
 - [ ] Tool/function calling system
-- [ ] Telegram gateway
-- [ ] Two-layer memory system (MEMORY.md + HISTORY.md)
 - [ ] File operations (read, write, edit)
 - [ ] Shell command execution
 - [ ] Web search and fetch
@@ -43,11 +44,20 @@ vibebot/
 
 ## Getting Started
 
+See [SETUP.md](SETUP.md) for detailed setup instructions.
+
+Quick start:
+
 ```bash
-# Build
+# 1. Copy and configure environment
+cp .env.example .env
+# Edit .env with your tokens
+
+# 2. Build
 go build -o vibebot cmd/vibebot/main.go
 
-# Run
+# 3. Run
+export $(cat .env | xargs)
 ./vibebot gateway
 ```
 
