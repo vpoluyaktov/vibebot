@@ -34,6 +34,20 @@ func New(token string, handler MessageHandler, allowedUsers []int64) (*Gateway, 
 		logger.Warn("No user whitelist configured - accepting messages from all users")
 	}
 
+	// Register bot commands for the command menu
+	commands := []tgbotapi.BotCommand{
+		{Command: "start", Description: "Start the bot"},
+		{Command: "new", Description: "Start a new conversation"},
+		{Command: "help", Description: "Show available commands"},
+	}
+	
+	cfg := tgbotapi.NewSetMyCommands(commands...)
+	if _, err := bot.Request(cfg); err != nil {
+		logger.Warn("Failed to register bot commands: %v", err)
+	} else {
+		logger.Debug("Bot commands registered successfully")
+	}
+
 	return &Gateway{
 		bot:          bot,
 		handler:      handler,

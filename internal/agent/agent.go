@@ -7,24 +7,28 @@ import (
 	"github.com/vpoluyaktov/vibebot/internal/llm"
 	"github.com/vpoluyaktov/vibebot/internal/logger"
 	"github.com/vpoluyaktov/vibebot/internal/memory"
+	"github.com/vpoluyaktov/vibebot/internal/session"
 	"github.com/vpoluyaktov/vibebot/internal/tools"
 )
 
 const maxToolIterations = 10 // Prevent infinite loops
+const maxHistoryMessages = 50 // Maximum messages to include in context
 
 // Agent represents the core AI agent
 type Agent struct {
 	llm      llm.Provider
 	memory   *memory.Memory
 	tools    *tools.Registry
+	sessions *session.Manager
 }
 
 // New creates a new Agent instance
-func New(provider llm.Provider, mem *memory.Memory, toolRegistry *tools.Registry) *Agent {
+func New(provider llm.Provider, mem *memory.Memory, toolRegistry *tools.Registry, sessionMgr *session.Manager) *Agent {
 	return &Agent{
-		llm:    provider,
-		memory: mem,
-		tools:  toolRegistry,
+		llm:      provider,
+		memory:   mem,
+		tools:    toolRegistry,
+		sessions: sessionMgr,
 	}
 }
 
@@ -35,6 +39,33 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 	// Add chat_id to context for tools
 	ctx = context.WithValue(ctx, "chat_id", chatID)
 
+	// Handle commands
+	if message == "/new" || message == "/start" {
+		sess := a.sessions.GetOrCreate(chatID)
+		sess.Clear()
+		if err := a.sessions.Save(sess); err != nil {
+			logger.Warn("Failed to save cleared session: %v", err)
+		}
+		return "🔄 New conversation started. Previous context cleared.", nil
+	}
+
+	if message == "/help" {
+		return "🤖 **vibebot** - AI Assistant\n\n" +
+			"**Commands:**\n" +
+			"/new - Start a new conversation (clears context)\n" +
+			"/help - Show this help message\n\n" +
+			"Just send me a message and I'll help you!", nil
+	}
+
+	// Get or create session for this chat
+	sess := a.sessions.GetOrCreate(chatID)
+
+	// Add user message to session
+	sess.AddMessage(llm.Message{
+		Role:    "user",
+		Content: message,
+	})
+
 	// Load memory context
 	memoryContent, err := a.memory.LoadMemory()
 	if err != nil {
@@ -42,22 +73,23 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 		memoryContent = ""
 	}
 
-	// Build initial messages
+	// Build system message
 	systemMessage := systemPrompt
 	if memoryContent != "" {
 		systemMessage += "\n\n## Current Memory (MEMORY.md)\n\n" + memoryContent
 	}
-	
+
+	// Build messages array: system + conversation history
 	messages := []llm.Message{
 		{
 			Role:    "system",
 			Content: systemMessage,
 		},
-		{
-			Role:    "user",
-			Content: message,
-		},
 	}
+
+	// Add conversation history from session
+	history := sess.GetHistory(maxHistoryMessages)
+	messages = append(messages, history...)
 
 	// Agent loop: handle tool calls iteratively
 	var finalResponse string
@@ -75,11 +107,13 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 		}
 
 		// Add assistant message with tool calls
-		messages = append(messages, llm.Message{
+		assistantMsg := llm.Message{
 			Role:      "assistant",
 			Content:   response.Content,
 			ToolCalls: response.ToolCalls,
-		})
+		}
+		messages = append(messages, assistantMsg)
+		sess.AddMessage(assistantMsg)
 
 		// Execute each tool call
 		for _, toolCall := range response.ToolCalls {
@@ -92,11 +126,13 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 			}
 
 			// Add tool result as a message
-			messages = append(messages, llm.Message{
+			toolMsg := llm.Message{
 				Role:       "tool",
 				Content:    result,
 				ToolCallID: toolCall.ID,
-			})
+			}
+			messages = append(messages, toolMsg)
+			sess.AddMessage(toolMsg)
 		}
 
 		// Continue loop to let LLM process tool results
@@ -105,6 +141,17 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 	// Check if we hit max iterations
 	if finalResponse == "" {
 		finalResponse = "Error: max tool iterations reached"
+	}
+
+	// Add final assistant response to session
+	sess.AddMessage(llm.Message{
+		Role:    "assistant",
+		Content: finalResponse,
+	})
+
+	// Save session to disk
+	if err := a.sessions.Save(sess); err != nil {
+		logger.Warn("Failed to save session: %v", err)
 	}
 
 	// Log conversation to history
