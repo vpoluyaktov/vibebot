@@ -105,9 +105,13 @@ func (g *Gateway) handleMessage(ctx context.Context, msg *tgbotapi.Message) {
 		response = fmt.Sprintf("Error: %v", err)
 	}
 
+	logger.Debug("Handler returned response (length: %d): %s", len(response), response)
+
 	// Send the response
 	if err := g.SendMessage(chatID, response); err != nil {
 		logger.Error("Error sending message: %v", err)
+	} else {
+		logger.Debug("Response sent successfully to chat %d", chatID)
 	}
 }
 
