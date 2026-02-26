@@ -11,7 +11,7 @@ import (
 	"github.com/vpoluyaktov/vibebot/internal/tools"
 )
 
-const maxToolIterations = 10 // Prevent infinite loops
+const maxToolIterations = 40 // Prevent infinite loops (matches nanobot default)
 const maxHistoryMessages = 50 // Maximum messages to include in context
 
 // Agent represents the core AI agent
@@ -140,7 +140,12 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 
 	// Check if we hit max iterations
 	if finalResponse == "" {
-		finalResponse = "Error: max tool iterations reached"
+		logger.Warn("Max tool iterations (%d) reached for chat %d", maxToolIterations, chatID)
+		finalResponse = fmt.Sprintf(
+			"I reached the maximum number of tool call iterations (%d) without completing the task. "+
+				"You can try breaking the task into smaller steps or rephrasing your request.",
+			maxToolIterations,
+		)
 	}
 
 	// Add final assistant response to session
