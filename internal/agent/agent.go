@@ -58,8 +58,9 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 			"**Commands:**\n" +
 			"/new - Start a new conversation (clears context)\n" +
 			"/model - Show current LLM model\n" +
-			"/model list - List all available models\n" +
-			"/model <name> - Switch to a different model\n" +
+			"/model list - List all available models (numbered)\n" +
+			"/model <number> - Switch by number (e.g., `/model 2`)\n" +
+			"/model <partial-name> - Switch by name (e.g., `/model llama`)\n" +
 			"/help - Show this help message\n\n" +
 			"Just send me a message and I'll help you!", nil
 	}
@@ -191,34 +192,84 @@ func (a *Agent) handleModelCommand(message string) (string, error) {
 		var response strings.Builder
 		response.WriteString("🤖 **Available Models**\n\n")
 		
-		for _, model := range allowed {
+		for i, model := range allowed {
 			if model == current {
-				response.WriteString(fmt.Sprintf("✅ `%s` _(current)_\n", model))
+				response.WriteString(fmt.Sprintf("%d. ✅ `%s` _(current)_\n", i+1, model))
 			} else {
-				response.WriteString(fmt.Sprintf("   `%s`\n", model))
+				response.WriteString(fmt.Sprintf("%d.    `%s`\n", i+1, model))
 			}
 		}
 		
-		response.WriteString("\n💡 Use `/model <name>` to switch models")
+		response.WriteString("\n💡 Use `/model <number>` or `/model <partial-name>` to switch")
 		return response.String(), nil
 	}
 	
-	// /model <name> - switch model
+	// /model <number or partial name> - switch model
 	if len(parts) >= 2 {
-		newModel := strings.Join(parts[1:], " ")
+		selector := strings.Join(parts[1:], " ")
+		allowed := a.modelManager.GetAllowed()
 		
-		if err := a.modelManager.SetCurrent(newModel); err != nil {
+		var selectedModel string
+		
+		// Try to parse as number first
+		if num := parseModelNumber(selector); num > 0 && num <= len(allowed) {
+			selectedModel = allowed[num-1]
+		} else {
+			// Try fuzzy match by partial name
+			matches := findModelsByPartialName(allowed, selector)
+			
+			if len(matches) == 0 {
+				return fmt.Sprintf("❌ No models match '%s'\n\nUse `/model list` to see available models.", selector), nil
+			}
+			
+			if len(matches) > 1 {
+				var response strings.Builder
+				response.WriteString(fmt.Sprintf("❌ Multiple models match '%s':\n\n", selector))
+				for i, model := range matches {
+					response.WriteString(fmt.Sprintf("%d. `%s`\n", i+1, model))
+				}
+				response.WriteString("\nPlease be more specific or use the model number.")
+				return response.String(), nil
+			}
+			
+			selectedModel = matches[0]
+		}
+		
+		if err := a.modelManager.SetCurrent(selectedModel); err != nil {
 			return fmt.Sprintf("❌ Error: %v\n\nUse `/model list` to see available models.", err), nil
 		}
 		
 		// Update the LLM provider with the new model
 		if openRouter, ok := a.llm.(*llm.OpenRouter); ok {
-			openRouter.SetModel(newModel)
+			openRouter.SetModel(selectedModel)
 		}
 		
-		logger.Info("Model switched to: %s", newModel)
-		return fmt.Sprintf("✅ Model switched to `%s`", newModel), nil
+		logger.Info("Model switched to: %s", selectedModel)
+		return fmt.Sprintf("✅ Model switched to `%s`", selectedModel), nil
 	}
 	
-	return "❌ Invalid command. Use `/model list` or `/model <name>`", nil
+	return "❌ Invalid command. Use `/model list` or `/model <number|name>`", nil
+}
+
+// parseModelNumber tries to parse a string as a positive integer
+func parseModelNumber(s string) int {
+	var num int
+	if _, err := fmt.Sscanf(s, "%d", &num); err == nil && num > 0 {
+		return num
+	}
+	return 0
+}
+
+// findModelsByPartialName finds models that contain the search string (case-insensitive)
+func findModelsByPartialName(models []string, search string) []string {
+	search = strings.ToLower(search)
+	var matches []string
+	
+	for _, model := range models {
+		if strings.Contains(strings.ToLower(model), search) {
+			matches = append(matches, model)
+		}
+	}
+	
+	return matches
 }
