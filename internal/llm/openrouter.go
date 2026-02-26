@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 )
 
 const openRouterURL = "https://openrouter.ai/api/v1/chat/completions"
@@ -23,7 +24,9 @@ func NewOpenRouter(apiKey, model string) *OpenRouter {
 	return &OpenRouter{
 		apiKey: apiKey,
 		model:  model,
-		client: &http.Client{},
+		client: &http.Client{
+			Timeout: 120 * time.Second, // 2 minute timeout for LLM requests
+		},
 	}
 }
 
