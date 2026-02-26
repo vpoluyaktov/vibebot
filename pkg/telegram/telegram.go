@@ -3,7 +3,9 @@ package telegram
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strconv"
+	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/vpoluyaktov/vibebot/internal/logger"
@@ -133,16 +135,103 @@ func (g *Gateway) isUserAllowed(userID int64) bool {
 	return false
 }
 
+// markdownToTelegramHTML converts markdown to Telegram-safe HTML
+func markdownToTelegramHTML(text string) string {
+	if text == "" {
+		return ""
+	}
+
+	// 1. Extract and protect code blocks
+	var codeBlocks []string
+	codeBlockRe := regexp.MustCompile("```[\\w]*\\n?([\\s\\S]*?)```")
+	text = codeBlockRe.ReplaceAllStringFunc(text, func(m string) string {
+		matches := codeBlockRe.FindStringSubmatch(m)
+		if len(matches) > 1 {
+			codeBlocks = append(codeBlocks, matches[1])
+			return fmt.Sprintf("\x00CB%d\x00", len(codeBlocks)-1)
+		}
+		return m
+	})
+
+	// 2. Extract and protect inline code
+	var inlineCodes []string
+	inlineCodeRe := regexp.MustCompile("`([^`]+)`")
+	text = inlineCodeRe.ReplaceAllStringFunc(text, func(m string) string {
+		matches := inlineCodeRe.FindStringSubmatch(m)
+		if len(matches) > 1 {
+			inlineCodes = append(inlineCodes, matches[1])
+			return fmt.Sprintf("\x00IC%d\x00", len(inlineCodes)-1)
+		}
+		return m
+	})
+
+	// 3. Headers # Title -> just the title text
+	headerRe := regexp.MustCompile("(?m)^#{1,6}\\s+(.+)$")
+	text = headerRe.ReplaceAllString(text, "$1")
+
+	// 4. Blockquotes > text -> just the text
+	blockquoteRe := regexp.MustCompile("(?m)^>\\s*(.*)$")
+	text = blockquoteRe.ReplaceAllString(text, "$1")
+
+	// 5. Escape HTML special characters
+	text = strings.ReplaceAll(text, "&", "&amp;")
+	text = strings.ReplaceAll(text, "<", "&lt;")
+	text = strings.ReplaceAll(text, ">", "&gt;")
+
+	// 6. Links [text](url)
+	linkRe := regexp.MustCompile("\\[([^\\]]+)\\]\\(([^)]+)\\)")
+	text = linkRe.ReplaceAllString(text, `<a href="$2">$1</a>`)
+
+	// 7. Bold **text** or __text__
+	boldRe1 := regexp.MustCompile("\\*\\*(.+?)\\*\\*")
+	text = boldRe1.ReplaceAllString(text, "<b>$1</b>")
+	boldRe2 := regexp.MustCompile("__(.+?)__")
+	text = boldRe2.ReplaceAllString(text, "<b>$1</b>")
+
+	// 8. Italic _text_ (avoid matching inside words)
+	italicRe := regexp.MustCompile("(?<![a-zA-Z0-9])_([^_]+)_(?![a-zA-Z0-9])")
+	text = italicRe.ReplaceAllString(text, "<i>$1</i>")
+
+	// 9. Strikethrough ~~text~~
+	strikeRe := regexp.MustCompile("~~(.+?)~~")
+	text = strikeRe.ReplaceAllString(text, "<s>$1</s>")
+
+	// 10. Bullet lists - item -> • item
+	bulletRe := regexp.MustCompile("(?m)^[-*]\\s+")
+	text = bulletRe.ReplaceAllString(text, "• ")
+
+	// 11. Restore inline code with HTML tags
+	for i, code := range inlineCodes {
+		escaped := strings.ReplaceAll(code, "&", "&amp;")
+		escaped = strings.ReplaceAll(escaped, "<", "&lt;")
+		escaped = strings.ReplaceAll(escaped, ">", "&gt;")
+		text = strings.ReplaceAll(text, fmt.Sprintf("\x00IC%d\x00", i), fmt.Sprintf("<code>%s</code>", escaped))
+	}
+
+	// 12. Restore code blocks with HTML tags
+	for i, code := range codeBlocks {
+		escaped := strings.ReplaceAll(code, "&", "&amp;")
+		escaped = strings.ReplaceAll(escaped, "<", "&lt;")
+		escaped = strings.ReplaceAll(escaped, ">", "&gt;")
+		text = strings.ReplaceAll(text, fmt.Sprintf("\x00CB%d\x00", i), fmt.Sprintf("<pre><code>%s</code></pre>", escaped))
+	}
+
+	return text
+}
+
 // SendMessage sends a text message to a chat
 func (g *Gateway) SendMessage(chatID int64, text string) error {
-	// Try sending with Markdown first
-	msg := tgbotapi.NewMessage(chatID, text)
-	msg.ParseMode = "Markdown"
+	// Convert markdown to Telegram HTML
+	html := markdownToTelegramHTML(text)
+	
+	msg := tgbotapi.NewMessage(chatID, html)
+	msg.ParseMode = "HTML"
 	
 	_, err := g.bot.Send(msg)
 	if err != nil {
-		// If Markdown parsing fails, fall back to plain text
-		logger.Warn("Markdown parse failed, falling back to plain text: %v", err)
+		// If HTML parsing fails, fall back to plain text
+		logger.Warn("HTML parse failed, falling back to plain text: %v", err)
+		msg.Text = text
 		msg.ParseMode = ""
 		_, err = g.bot.Send(msg)
 	}
