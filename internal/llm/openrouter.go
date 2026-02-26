@@ -34,9 +34,9 @@ func (o *OpenRouter) Name() string {
 
 // openRouterRequest matches OpenRouter's API format
 type openRouterRequest struct {
-	Model    string    `json:"model"`
-	Messages []Message `json:"messages"`
-	Tools    []Tool    `json:"tools,omitempty"`
+	Model    string                   `json:"model"`
+	Messages []map[string]interface{} `json:"messages"` // Use generic map for flexibility
+	Tools    []Tool                   `json:"tools,omitempty"`
 }
 
 // openRouterResponse matches OpenRouter's API response
@@ -63,9 +63,25 @@ type openRouterResponse struct {
 
 // Chat sends messages to OpenRouter and returns the response
 func (o *OpenRouter) Chat(ctx context.Context, messages []Message, tools []Tool) (*Response, error) {
+	// Convert messages to generic format
+	apiMessages := make([]map[string]interface{}, len(messages))
+	for i, msg := range messages {
+		apiMsg := map[string]interface{}{
+			"role":    msg.Role,
+			"content": msg.Content,
+		}
+		if len(msg.ToolCalls) > 0 {
+			apiMsg["tool_calls"] = msg.ToolCalls
+		}
+		if msg.ToolCallID != "" {
+			apiMsg["tool_call_id"] = msg.ToolCallID
+		}
+		apiMessages[i] = apiMsg
+	}
+
 	reqBody := openRouterRequest{
 		Model:    o.model,
-		Messages: messages,
+		Messages: apiMessages,
 		Tools:    tools,
 	}
 

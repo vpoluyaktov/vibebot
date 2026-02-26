@@ -4,8 +4,10 @@ import "context"
 
 // Message represents a chat message
 type Message struct {
-	Role    string `json:"role"`    // "system", "user", "assistant"
-	Content string `json:"content"`
+	Role       string     `json:"role"`                  // "system", "user", "assistant", "tool"
+	Content    string     `json:"content"`
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`  // For assistant messages
+	ToolCallID string     `json:"tool_call_id,omitempty"` // For tool response messages
 }
 
 // ToolCall represents a function call request from the LLM
