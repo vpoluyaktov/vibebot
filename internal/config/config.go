@@ -81,11 +81,13 @@ func parseAllowedUsers(value string) []int64 {
 
 func parseAllowedModels(value string) []string {
 	if value == "" {
-		// Default free models
+		// Default free models (updated 2026-02-26)
 		return []string{
 			"google/gemini-2.0-flash-exp:free",
 			"meta-llama/llama-3.3-70b-instruct:free",
-			"qwen/qwen-2.5-72b-instruct:free",
+			"qwen/qwen3-next-80b-a3b-instruct:free",
+			"nousresearch/hermes-3-llama-3.1-405b:free",
+			"mistralai/mistral-small-3.1-24b-instruct:free",
 		}
 	}
 	
