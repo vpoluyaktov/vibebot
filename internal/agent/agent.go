@@ -43,15 +43,15 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 	}
 
 	// Build initial messages
+	systemMessage := systemPrompt
+	if memoryContent != "" {
+		systemMessage += "\n\n## Current Memory (MEMORY.md)\n\n" + memoryContent
+	}
+	
 	messages := []llm.Message{
 		{
-			Role: "system",
-			Content: `You are vibebot, a helpful AI assistant written in Go.
-
-You have access to a persistent memory system. Important facts are stored in MEMORY.md.
-
-Current memory:
-` + memoryContent,
+			Role:    "system",
+			Content: systemMessage,
 		},
 		{
 			Role:    "user",
@@ -60,6 +60,7 @@ Current memory:
 	}
 
 	// Agent loop: handle tool calls iteratively
+	var finalResponse string
 	for i := 0; i < maxToolIterations; i++ {
 		// Call LLM with available tools
 		response, err := a.llm.Chat(ctx, messages, a.tools.GetDefinitions())
@@ -69,7 +70,8 @@ Current memory:
 
 		// If no tool calls, we're done
 		if len(response.ToolCalls) == 0 {
-			return response.Content, nil
+			finalResponse = response.Content
+			break
 		}
 
 		// Add assistant message with tool calls
@@ -100,5 +102,15 @@ Current memory:
 		// Continue loop to let LLM process tool results
 	}
 
-	return "", fmt.Errorf("max tool iterations reached")
+	// Check if we hit max iterations
+	if finalResponse == "" {
+		finalResponse = "Error: max tool iterations reached"
+	}
+
+	// Log conversation to history
+	if err := a.memory.LogConversation(chatID, message, finalResponse); err != nil {
+		log.Printf("Warning: failed to log conversation: %v", err)
+	}
+
+	return finalResponse, nil
 }

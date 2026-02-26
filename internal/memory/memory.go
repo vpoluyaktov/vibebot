@@ -1,8 +1,10 @@
 package memory
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // Memory manages the two-layer memory system
@@ -21,11 +23,48 @@ func New(workspaceDir string) (*Memory, error) {
 		return nil, err
 	}
 	
-	return &Memory{
+	m := &Memory{
 		workspaceDir: workspaceDir,
 		memoryFile:   filepath.Join(memoryDir, "MEMORY.md"),
 		historyFile:  filepath.Join(memoryDir, "HISTORY.md"),
-	}, nil
+	}
+	
+	// Initialize MEMORY.md if it doesn't exist
+	if err := m.initializeMemoryFile(); err != nil {
+		return nil, err
+	}
+	
+	return m, nil
+}
+
+// initializeMemoryFile creates MEMORY.md with a template if it doesn't exist
+func (m *Memory) initializeMemoryFile() error {
+	if _, err := os.Stat(m.memoryFile); os.IsNotExist(err) {
+		template := `# Long-term Memory
+
+This file stores important information that should persist across sessions.
+
+## User Information
+
+- **Name**: (not set)
+- **Timezone**: (not set)
+- **Preferences**: (not set)
+
+## Important Facts
+
+(Add important facts here)
+
+## Active Projects
+
+(Add project information here)
+
+---
+
+*This file is automatically loaded into context and can be edited by the bot.*
+`
+		return os.WriteFile(m.memoryFile, []byte(template), 0644)
+	}
+	return nil
 }
 
 // LoadMemory reads the long-term memory file
@@ -55,4 +94,29 @@ func (m *Memory) AppendHistory(entry string) error {
 	
 	_, err = f.WriteString(entry + "\n")
 	return err
+}
+
+// LogConversation logs a user message and bot response to history
+func (m *Memory) LogConversation(chatID int64, userMessage, botResponse string) error {
+	timestamp := time.Now().UTC().Format("2006-01-02 15:04:05 UTC")
+	entry := fmt.Sprintf(`
+---
+[%s] Chat: %d
+
+User: %s
+
+Bot: %s
+`, timestamp, chatID, userMessage, botResponse)
+	
+	return m.AppendHistory(entry)
+}
+
+// GetMemoryPath returns the path to MEMORY.md
+func (m *Memory) GetMemoryPath() string {
+	return m.memoryFile
+}
+
+// GetHistoryPath returns the path to HISTORY.md
+func (m *Memory) GetHistoryPath() string {
+	return m.historyFile
 }
