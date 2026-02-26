@@ -126,22 +126,38 @@ func (o *OpenRouter) Chat(ctx context.Context, messages []Message, tools []Tool)
 
 	resp, err := o.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
+		// Return error as content for graceful handling (matches nanobot behavior)
+		return &Response{
+			Content:      fmt.Sprintf("⚠️ Network error: %v. Please check your connection and try again.", err),
+			FinishReason: "error",
+		}, nil
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("openrouter returned status %d: %s", resp.StatusCode, string(body))
+		// Return error as content for graceful handling (matches nanobot behavior)
+		return &Response{
+			Content:      fmt.Sprintf("⚠️ API error (status %d): %s. This might be due to rate limiting or service issues.", resp.StatusCode, string(body)),
+			FinishReason: "error",
+		}, nil
 	}
 
 	var orResp openRouterResponse
 	if err := json.NewDecoder(resp.Body).Decode(&orResp); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+		// Return error as content for graceful handling (matches nanobot behavior)
+		return &Response{
+			Content:      fmt.Sprintf("⚠️ Failed to parse API response: %v. The service might be experiencing issues.", err),
+			FinishReason: "error",
+		}, nil
 	}
 
 	if len(orResp.Choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
+		// Return error as content for graceful handling (matches nanobot behavior)
+		return &Response{
+			Content:      "⚠️ The AI model returned an empty response. This usually indicates rate limiting or temporary service issues. Please try again in a moment.",
+			FinishReason: "error",
+		}, nil
 	}
 
 	choice := orResp.Choices[0]

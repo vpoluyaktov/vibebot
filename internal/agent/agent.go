@@ -108,11 +108,12 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 	var finalResponse string
 	for i := 0; i < maxToolIterations; i++ {
 		// Call LLM with available tools
+		// Note: LLM provider returns errors as content (not Go errors) for graceful handling
 		response, err := a.llm.Chat(ctx, messages, a.tools.GetDefinitions())
 		if err != nil {
-			// Log the error and return a user-friendly message
-			logger.Error("LLM API error (iteration %d): %v", i+1, err)
-			return "⚠️ I encountered an error communicating with the AI model. This might be due to rate limiting or temporary service issues. Please try again in a moment.", fmt.Errorf("LLM error: %w", err)
+			// This should rarely happen now since provider returns errors as content
+			logger.Error("Unexpected LLM error (iteration %d): %v", i+1, err)
+			return fmt.Sprintf("⚠️ Unexpected error: %v", err), err
 		}
 
 		// Clean response content from XML artifacts (some models output <tool_call> tags)
