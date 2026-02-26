@@ -30,17 +30,18 @@ vibebot/
 ## Features
 
 - [x] Project initialization
-- [x] Core agent loop
+- [x] Core agent loop with iterative tool execution
 - [x] LLM provider integration (OpenRouter)
 - [x] Telegram gateway
 - [x] Two-layer memory system (MEMORY.md + HISTORY.md)
 - [x] Clean, modular architecture
-- [ ] Tool/function calling system
-- [ ] File operations (read, write, edit)
-- [ ] Shell command execution
+- [x] Tool/function calling system
+- [x] File operations (read, write, edit, list)
+- [x] Shell command execution (with safety guards)
 - [ ] Web search and fetch
 - [ ] Cron/scheduling system
 - [ ] Self-modification capabilities
+- [ ] Multi-user session management
 
 ## Getting Started
 
