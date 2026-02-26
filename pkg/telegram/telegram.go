@@ -188,9 +188,9 @@ func markdownToTelegramHTML(text string) string {
 	boldRe2 := regexp.MustCompile("__(.+?)__")
 	text = boldRe2.ReplaceAllString(text, "<b>$1</b>")
 
-	// 8. Italic _text_ (avoid matching inside words)
-	italicRe := regexp.MustCompile("(?<![a-zA-Z0-9])_([^_]+)_(?![a-zA-Z0-9])")
-	text = italicRe.ReplaceAllString(text, "<i>$1</i>")
+	// 8. Italic *text* (single asterisk, not already bold)
+	italicRe := regexp.MustCompile("(?:^|\\s)\\*([^*]+)\\*(?:$|\\s)")
+	text = italicRe.ReplaceAllString(text, " <i>$1</i> ")
 
 	// 9. Strikethrough ~~text~~
 	strikeRe := regexp.MustCompile("~~(.+?)~~")
