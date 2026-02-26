@@ -10,6 +10,17 @@ fi
 
 export $(grep -v '^#' .env | xargs)
 
+# Kill any existing vibebot instances
+echo "Checking for existing vibebot instances..."
+if pgrep -f "vibebot gateway" > /dev/null; then
+    echo "Found running vibebot instance(s), stopping them..."
+    pkill -9 -f "vibebot gateway"
+    sleep 1
+    echo "Old instances stopped."
+else
+    echo "No existing instances found."
+fi
+
 # Build if binary doesn't exist
 if [ ! -f vibebot ]; then
     echo "Building vibebot..."
