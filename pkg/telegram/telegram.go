@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/vpoluyaktov/vibebot/internal/logger"
@@ -101,6 +102,10 @@ func (g *Gateway) handleMessage(ctx context.Context, msg *tgbotapi.Message) {
 
 	logger.Debug("Processing message from chat %d: %s", chatID, text)
 
+	// Start typing indicator
+	stopTyping := g.startTypingIndicator(ctx, chatID)
+	defer stopTyping()
+
 	// Call the handler
 	response, err := g.handler(ctx, chatID, text)
 	if err != nil {
@@ -133,6 +138,45 @@ func (g *Gateway) isUserAllowed(userID int64) bool {
 	}
 	
 	return false
+}
+
+// sendChatAction sends a chat action (like typing) to a chat
+func (g *Gateway) sendChatAction(chatID int64, action string) error {
+	chatAction := tgbotapi.NewChatAction(chatID, action)
+	_, err := g.bot.Request(chatAction)
+	return err
+}
+
+// startTypingIndicator starts sending typing indicator and returns a stop function
+func (g *Gateway) startTypingIndicator(ctx context.Context, chatID int64) func() {
+	// Create a context for the typing indicator
+	typingCtx, cancel := context.WithCancel(ctx)
+	
+	// Start goroutine to send typing indicator every 5 seconds
+	go func() {
+		// Send initial typing indicator
+		if err := g.sendChatAction(chatID, "typing"); err != nil {
+			logger.Debug("Failed to send typing indicator: %v", err)
+		}
+		
+		// Continue sending every 5 seconds until stopped
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		
+		for {
+			select {
+			case <-typingCtx.Done():
+				return
+			case <-ticker.C:
+				if err := g.sendChatAction(chatID, "typing"); err != nil {
+					logger.Debug("Failed to send typing indicator: %v", err)
+				}
+			}
+		}
+	}()
+	
+	// Return the stop function
+	return cancel
 }
 
 // markdownToTelegramHTML converts markdown to Telegram-safe HTML

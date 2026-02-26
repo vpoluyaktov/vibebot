@@ -107,14 +107,18 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 	// Agent loop: handle tool calls iteratively
 	var finalResponse string
 	for i := 0; i < maxToolIterations; i++ {
+		logger.Debug("Agent loop iteration %d/%d", i+1, maxToolIterations)
+		
 		// Call LLM with available tools
 		// Note: LLM provider returns errors as content (not Go errors) for graceful handling
+		logger.Debug("Calling LLM with %d messages and %d tools", len(messages), len(a.tools.GetDefinitions()))
 		response, err := a.llm.Chat(ctx, messages, a.tools.GetDefinitions())
 		if err != nil {
 			// This should rarely happen now since provider returns errors as content
 			logger.Error("Unexpected LLM error (iteration %d): %v", i+1, err)
 			return fmt.Sprintf("⚠️ Unexpected error: %v", err), err
 		}
+		logger.Debug("LLM response: content_len=%d, tool_calls=%d, finish_reason=%s", len(response.Content), len(response.ToolCalls), response.FinishReason)
 
 		// Clean response content from XML artifacts (some models output <tool_call> tags)
 		if response.Content != "" {

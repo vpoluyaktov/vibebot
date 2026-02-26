@@ -2,6 +2,9 @@ package modelmanager
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -10,14 +13,28 @@ type Manager struct {
 	mu            sync.RWMutex
 	currentModel  string
 	allowedModels []string
+	stateFile     string
 }
 
 // New creates a new model manager
-func New(currentModel string, allowedModels []string) *Manager {
-	return &Manager{
+func New(currentModel string, allowedModels []string, workspaceDir string) *Manager {
+	stateFile := filepath.Join(workspaceDir, "memory", "current_model.txt")
+	
+	m := &Manager{
 		currentModel:  currentModel,
 		allowedModels: allowedModels,
+		stateFile:     stateFile,
 	}
+	
+	// Try to load saved model preference
+	if savedModel, err := m.loadSavedModel(); err == nil && savedModel != "" {
+		// Only use saved model if it's in the allowed list
+		if m.isAllowed(savedModel) {
+			m.currentModel = savedModel
+		}
+	}
+	
+	return m
 }
 
 // GetCurrent returns the current model name
@@ -37,6 +54,10 @@ func (m *Manager) SetCurrent(model string) error {
 	}
 	
 	m.currentModel = model
+	
+	// Save the model selection to disk (ignore errors, non-critical)
+	_ = m.saveModel(model)
+	
 	return nil
 }
 
@@ -59,4 +80,34 @@ func (m *Manager) isAllowed(model string) bool {
 		}
 	}
 	return false
+}
+
+// saveModel persists the current model selection to disk
+func (m *Manager) saveModel(model string) error {
+	// Ensure the directory exists
+	dir := filepath.Dir(m.stateFile)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create state directory: %w", err)
+	}
+	
+	// Write the model name to the state file
+	if err := os.WriteFile(m.stateFile, []byte(model), 0644); err != nil {
+		return fmt.Errorf("failed to save model state: %w", err)
+	}
+	
+	return nil
+}
+
+// loadSavedModel reads the saved model selection from disk
+func (m *Manager) loadSavedModel() (string, error) {
+	data, err := os.ReadFile(m.stateFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil // No saved state, not an error
+		}
+		return "", fmt.Errorf("failed to read model state: %w", err)
+	}
+	
+	// Trim whitespace and return the model name
+	return strings.TrimSpace(string(data)), nil
 }
