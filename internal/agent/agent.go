@@ -57,7 +57,7 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 		return "🤖 **vibebot** - AI Assistant\n\n" +
 			"**Commands:**\n" +
 			"/new - Start a new conversation (clears context)\n" +
-			"/model - Show current LLM model\n" +
+			"/model, /models - Show current LLM model\n" +
 			"/model list - List all available models (numbered)\n" +
 			"/model <number> - Switch by number (e.g., `/model 2`)\n" +
 			"/model <partial-name> - Switch by name (e.g., `/model llama`)\n" +
@@ -65,8 +65,8 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 			"Just send me a message and I'll help you!", nil
 	}
 
-	// Handle /model commands
-	if strings.HasPrefix(message, "/model") {
+	// Handle /model and /models commands
+	if strings.HasPrefix(message, "/model") || strings.HasPrefix(message, "/models") {
 		return a.handleModelCommand(message)
 	}
 

@@ -38,7 +38,8 @@ func New(token string, handler MessageHandler, allowedUsers []int64) (*Gateway, 
 	commands := []tgbotapi.BotCommand{
 		{Command: "start", Description: "Start the bot"},
 		{Command: "new", Description: "Start a new conversation"},
-		{Command: "model", Description: "Show current LLM model"},
+		{Command: "model", Description: "Show/switch LLM model"},
+		{Command: "models", Description: "List available models"},
 		{Command: "help", Description: "Show available commands"},
 	}
 	
