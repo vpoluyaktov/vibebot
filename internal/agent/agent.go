@@ -55,13 +55,20 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 
 	if message == "/help" {
 		return "🤖 **vibebot** - AI Assistant\n\n" +
-			"**Commands:**\n" +
+			"**Conversation:**\n" +
 			"/new - Start a new conversation (clears context)\n" +
-			"/model, /models - Show current LLM model\n" +
-			"/model list - List all available models (numbered)\n" +
-			"/model <number> - Switch by number (e.g., `/model 2`)\n" +
-			"/model <partial-name> - Switch by name (e.g., `/model llama`)\n" +
 			"/help - Show this help message\n\n" +
+			"**Model Management:**\n" +
+			"/model, /models - Show current LLM model\n" +
+			"/model list - List all available models\n" +
+			"/model <number> - Switch by number\n" +
+			"/model <partial-name> - Switch by name\n\n" +
+			"**Project Management:**\n" +
+			"/projects - List all projects\n" +
+			"/project create <name> - Create new project\n" +
+			"/project <name> - Switch to project\n" +
+			"/project delete <name> - Delete project\n" +
+			"/project clear - Clear current project\n\n" +
 			"Just send me a message and I'll help you!", nil
 	}
 
