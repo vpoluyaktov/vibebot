@@ -16,6 +16,7 @@ import (
 type Session struct {
 	Key              string         `json:"key"`
 	Messages         []llm.Message  `json:"messages"`
+	CurrentProject   string         `json:"current_project,omitempty"`
 	CreatedAt        time.Time      `json:"created_at"`
 	UpdatedAt        time.Time      `json:"updated_at"`
 	LastConsolidated int            `json:"last_consolidated"`
@@ -168,4 +169,30 @@ func (m *Manager) getSessionPath(key string) string {
 	safeKey := filepath.Base(key)
 	safeKey = filepath.Clean(safeKey)
 	return filepath.Join(m.sessionsDir, safeKey+".json")
+}
+
+// SetProject sets the current project for the session
+func (s *Session) SetProject(projectName string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.CurrentProject = projectName
+	s.UpdatedAt = time.Now()
+}
+
+// GetProject returns the current project name (empty string if none)
+func (s *Session) GetProject() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.CurrentProject
+}
+
+// ClearProject clears the current project
+func (s *Session) ClearProject() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.CurrentProject = ""
+	s.UpdatedAt = time.Now()
 }
