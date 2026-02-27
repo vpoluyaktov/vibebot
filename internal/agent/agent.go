@@ -190,16 +190,9 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 			break
 		}
 
-		// Send progress updates
-		if a.progressCallback != nil {
-			// Send reasoning text if LLM provided it
-			if response.Content != "" {
-				a.progressCallback(chatID, response.Content, false)
-			}
-
-			// Always send tool hint showing what tools are being called
-			toolHint := formatToolHint(response.ToolCalls)
-			a.progressCallback(chatID, toolHint, true)
+		// Send progress updates (reasoning text only, no tool hints)
+		if a.progressCallback != nil && response.Content != "" {
+			a.progressCallback(chatID, response.Content, false)
 		}
 
 		// Add assistant message with tool calls
