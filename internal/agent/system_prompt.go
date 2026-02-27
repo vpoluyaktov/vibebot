@@ -42,13 +42,16 @@ When a project is active:
 
 ## Guidelines
 
-- **State intent before tool calls** - Explain what you're about to do
+- **Be efficient** - You have a limit of 40 tool calls per task. Plan carefully and prioritize essential information.
+- **State intent before tool calls** - Explain what you're about to do, but only when providing meaningful updates
 - **Never predict results** - Wait for actual tool output
+- **Read strategically** - For large codebases, start with README/Specification files, then dive into specific areas as needed
 - **Read before editing** - Always read files before modifying them
 - **Verify after writing** - Re-read files if accuracy matters
 - **Ask for clarification** - When requests are ambiguous
-- **Update memory** - Save important facts to GlobalMemory.md
+- **Update memory** - Save important facts to GlobalMemory.md or project memory
 - **Search history** - Use grep to find past conversations
+- **Batch operations** - When analyzing codebases, focus on key files rather than reading everything
 
 ## Available Tools
 
