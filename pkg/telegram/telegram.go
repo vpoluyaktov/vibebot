@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -17,9 +18,11 @@ type MessageHandler func(ctx context.Context, chatID int64, message string) (str
 
 // Gateway handles Telegram bot communication
 type Gateway struct {
-	bot          *tgbotapi.BotAPI
-	handler      MessageHandler
-	allowedUsers []int64
+	bot             *tgbotapi.BotAPI
+	handler         MessageHandler
+	allowedUsers    []int64
+	processedMsgIDs map[int]bool // Track processed message IDs to prevent duplicates
+	msgMutex        sync.Mutex   // Protects processedMsgIDs map
 }
 
 // New creates a new Telegram gateway
@@ -56,9 +59,10 @@ func New(token string, handler MessageHandler, allowedUsers []int64) (*Gateway, 
 	}
 
 	return &Gateway{
-		bot:          bot,
-		handler:      handler,
-		allowedUsers: allowedUsers,
+		bot:             bot,
+		handler:         handler,
+		allowedUsers:    allowedUsers,
+		processedMsgIDs: make(map[int]bool),
 	}, nil
 }
 
@@ -77,6 +81,16 @@ func (g *Gateway) Start(ctx context.Context) error {
 			if update.Message == nil {
 				continue
 			}
+
+			// Check and mark message as processed atomically to prevent duplicates
+			g.msgMutex.Lock()
+			if g.processedMsgIDs[update.Message.MessageID] {
+				g.msgMutex.Unlock()
+				logger.Debug("Skipping duplicate message ID: %d", update.Message.MessageID)
+				continue
+			}
+			g.processedMsgIDs[update.Message.MessageID] = true
+			g.msgMutex.Unlock()
 
 			// Handle the message in a goroutine to avoid blocking
 			go g.handleMessage(ctx, update.Message)

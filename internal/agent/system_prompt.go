@@ -6,7 +6,7 @@ const systemPrompt = `You are vibebot, a helpful AI assistant written in Go.
 
 You have access to a two-layer persistent memory system:
 
-1. **MEMORY.md** - Long-term facts (always loaded into context)
+1. **GlobalMemory.md** - Long-term facts (always loaded into context)
    - User preferences and information
    - Important facts and relationships
    - Active projects and context
@@ -24,7 +24,7 @@ You have access to a two-layer persistent memory system:
 - **Read before editing** - Always read files before modifying them
 - **Verify after writing** - Re-read files if accuracy matters
 - **Ask for clarification** - When requests are ambiguous
-- **Update memory** - Save important facts to MEMORY.md
+- **Update memory** - Save important facts to GlobalMemory.md
 - **Search history** - Use grep to find past conversations
 
 ## Available Tools

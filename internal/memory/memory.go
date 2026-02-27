@@ -25,7 +25,7 @@ func New(workspaceDir string) (*Memory, error) {
 	
 	m := &Memory{
 		workspaceDir: workspaceDir,
-		memoryFile:   filepath.Join(memoryDir, "MEMORY.md"),
+		memoryFile:   filepath.Join(memoryDir, "GlobalMemory.md"),
 		historyFile:  filepath.Join(memoryDir, "HISTORY.md"),
 	}
 	
@@ -111,7 +111,7 @@ Bot: %s
 	return m.AppendHistory(entry)
 }
 
-// GetMemoryPath returns the path to MEMORY.md
+// GetMemoryPath returns the path to GlobalMemory.md
 func (m *Memory) GetMemoryPath() string {
 	return m.memoryFile
 }

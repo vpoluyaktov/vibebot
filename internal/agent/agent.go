@@ -89,7 +89,7 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 	// Build system message
 	systemMessage := systemPrompt
 	if memoryContent != "" {
-		systemMessage += "\n\n## Current Memory (MEMORY.md)\n\n" + memoryContent
+		systemMessage += "\n\n## Current Memory (GlobalMemory.md)\n\n" + memoryContent
 	}
 
 	// Build messages array: system + conversation history
