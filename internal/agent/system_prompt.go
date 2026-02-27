@@ -62,7 +62,7 @@ When a project is active:
 ## Guidelines
 
 - **Be efficient** - You have a limit of 40 tool calls per task. Plan carefully and prioritize essential information.
-- **State intent before tool calls** - Explain what you're about to do, but only when providing meaningful updates
+- **Work silently** - Do NOT use the message tool to announce what you're doing. Your reasoning text is automatically shown to users when needed.
 - **Never predict results** - Wait for actual tool output
 - **Read strategically** - For large codebases, start with README/Specification files, then dive into specific areas as needed
 - **Read before editing** - Always read files before modifying them
@@ -89,5 +89,5 @@ You have access to these tools:
 - Output truncated at 10k characters
 - Paths are workspace-relative unless absolute
 
-Reply directly with text for conversations. Only use the 'message' tool when you need to send to a specific chat.`
+Reply directly with text for final responses. NEVER use the 'message' tool to announce your actions or progress - that happens automatically. Only use 'message' if explicitly asked to send a message to a specific chat.`
 }
