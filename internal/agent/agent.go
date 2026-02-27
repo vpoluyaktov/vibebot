@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/vpoluyaktov/vibebot/internal/consolidation"
@@ -14,31 +15,41 @@ import (
 	"github.com/vpoluyaktov/vibebot/internal/tools"
 )
 
-const maxToolIterations = 40 // Prevent infinite loops (matches nanobot default)
-const maxHistoryMessages = 50 // Maximum messages to include in context
+// ProgressCallback is called to send progress updates during task execution
+type ProgressCallback func(chatID int64, message string, isToolHint bool)
+
+const maxToolIterations = 40       // Prevent infinite loops (matches nanobot default)
+const maxHistoryMessages = 50      // Maximum messages to include in context
 const consolidationThreshold = 100 // Trigger consolidation when session exceeds this
 const consolidationBatchSize = 50  // How many old messages to consolidate at once
 
 // Agent represents the core AI agent
 type Agent struct {
-	llm           llm.Provider
-	memory        *memory.Memory
-	tools         *tools.Registry
-	sessions      *session.Manager
-	modelManager  *modelmanager.Manager
-	consolidator  *consolidation.Consolidator
+	llm              llm.Provider
+	memory           *memory.Memory
+	tools            *tools.Registry
+	sessions         *session.Manager
+	modelManager     *modelmanager.Manager
+	consolidator     *consolidation.Consolidator
+	progressCallback ProgressCallback
 }
 
 // New creates a new Agent instance
 func New(provider llm.Provider, mem *memory.Memory, toolRegistry *tools.Registry, sessionMgr *session.Manager, modelMgr *modelmanager.Manager) *Agent {
 	return &Agent{
-		llm:           provider,
-		memory:        mem,
-		tools:         toolRegistry,
-		sessions:      sessionMgr,
-		modelManager:  modelMgr,
-		consolidator:  consolidation.New(provider, mem),
+		llm:              provider,
+		memory:           mem,
+		tools:            toolRegistry,
+		sessions:         sessionMgr,
+		modelManager:     modelMgr,
+		consolidator:     consolidation.New(provider, mem),
+		progressCallback: nil,
 	}
+}
+
+// SetProgressCallback sets the callback for progress updates
+func (a *Agent) SetProgressCallback(callback ProgressCallback) {
+	a.progressCallback = callback
 }
 
 // ProcessMessage handles an incoming message and generates a response
@@ -154,7 +165,7 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 	var finalResponse string
 	for i := 0; i < maxToolIterations; i++ {
 		logger.Debug("Agent loop iteration %d/%d", i+1, maxToolIterations)
-		
+
 		// Call LLM with available tools
 		// Note: LLM provider returns errors as content (not Go errors) for graceful handling
 		logger.Debug("Calling LLM with %d messages and %d tools", len(messages), len(a.tools.GetDefinitions()))
@@ -175,6 +186,17 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 		if len(response.ToolCalls) == 0 {
 			finalResponse = response.Content
 			break
+		}
+
+		// Send progress update: LLM's reasoning before tool execution
+		if a.progressCallback != nil && response.Content != "" {
+			a.progressCallback(chatID, response.Content, false)
+		}
+
+		// Send tool hint (what tools are being called)
+		if a.progressCallback != nil && len(response.ToolCalls) > 0 {
+			toolHint := formatToolHint(response.ToolCalls)
+			a.progressCallback(chatID, toolHint, true)
 		}
 
 		// Add assistant message with tool calls
@@ -310,15 +332,15 @@ func (a *Agent) consolidateSession(sessionKey string) {
 // handleModelCommand processes /model commands
 func (a *Agent) handleModelCommand(message string) (string, error) {
 	parts := strings.Fields(message)
-	
+
 	// /model or /model list - show all models
 	if len(parts) == 1 || (len(parts) == 2 && parts[1] == "list") {
 		current := a.modelManager.GetCurrent()
 		allowed := a.modelManager.GetAllowed()
-		
+
 		var response strings.Builder
 		response.WriteString("🤖 **Available Models**\n\n")
-		
+
 		for i, model := range allowed {
 			if model == current {
 				response.WriteString(fmt.Sprintf("%d. `%s` ✅\n", i+1, model))
@@ -326,29 +348,29 @@ func (a *Agent) handleModelCommand(message string) (string, error) {
 				response.WriteString(fmt.Sprintf("%d. `%s`\n", i+1, model))
 			}
 		}
-		
+
 		response.WriteString("\n💡 Use `/model <number>` or `/model <partial-name>` to switch")
 		return response.String(), nil
 	}
-	
+
 	// /model <number or partial name> - switch model
 	if len(parts) >= 2 {
 		selector := strings.Join(parts[1:], " ")
 		allowed := a.modelManager.GetAllowed()
-		
+
 		var selectedModel string
-		
+
 		// Try to parse as number first
 		if num := parseModelNumber(selector); num > 0 && num <= len(allowed) {
 			selectedModel = allowed[num-1]
 		} else {
 			// Try fuzzy match by partial name
 			matches := findModelsByPartialName(allowed, selector)
-			
+
 			if len(matches) == 0 {
 				return fmt.Sprintf("❌ No models match '%s'\n\nUse `/model list` to see available models.", selector), nil
 			}
-			
+
 			if len(matches) > 1 {
 				var response strings.Builder
 				response.WriteString(fmt.Sprintf("❌ Multiple models match '%s':\n\n", selector))
@@ -358,23 +380,23 @@ func (a *Agent) handleModelCommand(message string) (string, error) {
 				response.WriteString("\nPlease be more specific or use the model number.")
 				return response.String(), nil
 			}
-			
+
 			selectedModel = matches[0]
 		}
-		
+
 		if err := a.modelManager.SetCurrent(selectedModel); err != nil {
 			return fmt.Sprintf("❌ Error: %v\n\nUse `/model list` to see available models.", err), nil
 		}
-		
+
 		// Update the LLM provider with the new model
 		if openRouter, ok := a.llm.(*llm.OpenRouter); ok {
 			openRouter.SetModel(selectedModel)
 		}
-		
+
 		logger.Info("Model switched to: %s", selectedModel)
 		return fmt.Sprintf("✅ Model switched to `%s`", selectedModel), nil
 	}
-	
+
 	return "❌ Invalid command. Use `/model list` or `/model <number|name>`", nil
 }
 
@@ -383,20 +405,20 @@ func (a *Agent) handleProjectsCommand(chatID int64) (string, error) {
 	// Get current project from session
 	sess := a.sessions.GetOrCreate(chatID)
 	currentProject := sess.GetProject()
-	
+
 	// List all projects using memory manager
 	projects, err := a.memory.ListProjects()
 	if err != nil {
 		return fmt.Sprintf("❌ Error reading projects: %v", err), nil
 	}
-	
+
 	if len(projects) == 0 {
 		return "📂 **Projects**\n\nNo projects found. Use `/project create <name>` to create one.", nil
 	}
-	
+
 	var response strings.Builder
 	response.WriteString(fmt.Sprintf("📂 **Projects** (%d total)\n\n", len(projects)))
-	
+
 	for _, project := range projects {
 		if project == currentProject {
 			response.WriteString(fmt.Sprintf("✅ `%s` (current)\n", project))
@@ -404,7 +426,7 @@ func (a *Agent) handleProjectsCommand(chatID int64) (string, error) {
 			response.WriteString(fmt.Sprintf("   `%s`\n", project))
 		}
 	}
-	
+
 	response.WriteString("\n💡 Use `/project <name>` to switch")
 	if currentProject != "" {
 		response.WriteString("\n💡 Use `/project clear` to clear current project")
@@ -416,7 +438,7 @@ func (a *Agent) handleProjectsCommand(chatID int64) (string, error) {
 // handleProjectCommand manages project creation, switching, and deletion
 func (a *Agent) handleProjectCommand(chatID int64, message string) (string, error) {
 	parts := strings.Fields(message)
-	
+
 	if len(parts) < 2 {
 		return "❌ Usage:\n" +
 			"- `/project create <name>` - Create a new project\n" +
@@ -425,107 +447,107 @@ func (a *Agent) handleProjectCommand(chatID int64, message string) (string, erro
 			"- `/project clear` - Clear current project\n" +
 			"- `/projects` - List all projects", nil
 	}
-	
+
 	sess := a.sessions.GetOrCreate(chatID)
 	subcommand := parts[1]
-	
+
 	// Handle /project create <name>
 	if subcommand == "create" {
 		if len(parts) < 3 {
 			return "❌ Usage: `/project create <name>`", nil
 		}
-		
+
 		projectName := parts[2]
-		
+
 		// Validate project name
 		if err := a.memory.ValidateProjectName(projectName); err != nil {
 			return fmt.Sprintf("❌ Invalid project name: %v", err), nil
 		}
-		
+
 		// Check if project already exists
 		if a.memory.ProjectExists(projectName) {
 			return fmt.Sprintf("❌ Project `%s` already exists!", projectName), nil
 		}
-		
+
 		// Create project using memory manager
 		if err := a.memory.CreateProject(projectName); err != nil {
 			return fmt.Sprintf("❌ Error creating project: %v", err), nil
 		}
-		
+
 		// Automatically switch to the new project
 		sess.SetProject(projectName)
 		if err := a.sessions.Save(sess); err != nil {
 			logger.Warn("Failed to save session after creating project: %v", err)
 		}
-		
+
 		logger.Info("Created and switched to project: %s", projectName)
 		return fmt.Sprintf("✅ Project `%s` created and activated!\n\nYou can now add project-specific context. Use `/project clear` to return to global context.", projectName), nil
 	}
-	
+
 	// Handle /project delete <name>
 	if subcommand == "delete" {
 		if len(parts) < 3 {
 			return "❌ Usage: `/project delete <name>`", nil
 		}
-		
+
 		projectName := parts[2]
 		currentProject := sess.GetProject()
-		
+
 		// Prevent deleting current project
 		if projectName == currentProject {
 			return fmt.Sprintf("❌ Cannot delete active project `%s`!\n\nUse `/project clear` first, then delete.", projectName), nil
 		}
-		
+
 		// Delete project using memory manager
 		if err := a.memory.DeleteProject(projectName); err != nil {
 			return fmt.Sprintf("❌ Error deleting project: %v", err), nil
 		}
-		
+
 		logger.Info("Deleted project: %s", projectName)
 		return fmt.Sprintf("✅ Project `%s` deleted!", projectName), nil
 	}
-	
+
 	// Handle /project clear - clear current project
 	if subcommand == "clear" {
 		currentProject := sess.GetProject()
 		if currentProject == "" {
 			return "ℹ️ No active project. Already using global context only.", nil
 		}
-		
+
 		sess.ClearProject()
 		if err := a.sessions.Save(sess); err != nil {
 			logger.Warn("Failed to save session after clearing project: %v", err)
 		}
-		
+
 		logger.Info("Cleared project context for chat %d (was: %s)", chatID, currentProject)
 		return fmt.Sprintf("✅ Cleared project `%s`\n\nNow using global context only.", currentProject), nil
 	}
-	
+
 	// Handle /project <name> - switch to project
 	projectName := subcommand
-	
+
 	// Validate project name
 	if err := a.memory.ValidateProjectName(projectName); err != nil {
 		return fmt.Sprintf("❌ Invalid project name: %v", err), nil
 	}
-	
+
 	// Check if project exists
 	if !a.memory.ProjectExists(projectName) {
 		return fmt.Sprintf("❌ Project `%s` does not exist!\n\nUse `/projects` to see available projects or `/project create %s` to create it.", projectName, projectName), nil
 	}
-	
+
 	// Load project memory to verify it's readable
 	projectMemory, err := a.memory.LoadProjectMemory(projectName)
 	if err != nil {
 		return fmt.Sprintf("❌ Error loading project: %v", err), nil
 	}
-	
+
 	// Switch to project
 	sess.SetProject(projectName)
 	if err := a.sessions.Save(sess); err != nil {
 		logger.Warn("Failed to save session after switching project: %v", err)
 	}
-	
+
 	logger.Info("Switched to project: %s (chat %d)", projectName, chatID)
 	return fmt.Sprintf("✅ Switched to project `%s`\n\nProject memory loaded (%d bytes). All context is now project-specific.", projectName, len(projectMemory)), nil
 }
@@ -543,27 +565,24 @@ func parseModelNumber(s string) int {
 func findModelsByPartialName(models []string, search string) []string {
 	search = strings.ToLower(search)
 	var matches []string
-	
+
 	for _, model := range models {
 		if strings.Contains(strings.ToLower(model), search) {
 			matches = append(matches, model)
 		}
 	}
-	
+
 	return matches
 }
 
-// cleanXMLArtifacts removes XML-style tool call tags that some models incorrectly output
+// cleanXMLArtifacts removes XML-like artifacts that some models output
 func cleanXMLArtifacts(content string) string {
-	// Remove <tool_call>...</tool_call> tags and their content
-	// This handles cases where models output XML instead of using proper JSON tool calls
-	content = strings.ReplaceAll(content, "<tool_call>", "")
-	content = strings.ReplaceAll(content, "</tool_call>", "")
-	
-	// Also clean up any stray JSON that might be in the content
-	// (some models put JSON outside of proper tool_calls structure)
+	// Remove <tool_call> tags and similar artifacts
+	re := regexp.MustCompile(`</?tool_call[^>]*>`)
+	content = re.ReplaceAllString(content, "")
+
+	// If content looks like it contains tool call JSON, strip it
 	if strings.Contains(content, `{"name":`) && strings.Contains(content, `"arguments":`) {
-		// If content looks like it contains tool call JSON, strip it
 		lines := strings.Split(content, "\n")
 		var cleaned []string
 		inJSON := false
@@ -583,6 +602,45 @@ func cleanXMLArtifacts(content string) string {
 		}
 		content = strings.Join(cleaned, "\n")
 	}
-	
+
 	return strings.TrimSpace(content)
+}
+
+// formatToolHint formats tool calls as concise hints like: read_file("config.py"), exec("ls -la")
+func formatToolHint(toolCalls []llm.ToolCall) string {
+	if len(toolCalls) == 0 {
+		return ""
+	}
+
+	hints := make([]string, 0, len(toolCalls))
+	for _, tc := range toolCalls {
+		// Arguments is a JSON string, try to extract first value for display
+		var firstArg string
+		if tc.Function.Arguments != "" {
+			// Simple extraction: look for first string value in JSON
+			// This is a best-effort display, not full parsing
+			start := strings.Index(tc.Function.Arguments, `":"`)
+			if start != -1 {
+				start += 3 // Skip past ":"
+				end := strings.Index(tc.Function.Arguments[start:], `"`)
+				if end != -1 {
+					firstArg = tc.Function.Arguments[start : start+end]
+				}
+			}
+		}
+
+		// Truncate long arguments
+		if len(firstArg) > 40 {
+			firstArg = firstArg[:40] + "..."
+		}
+
+		// Format as function call
+		if firstArg != "" {
+			hints = append(hints, fmt.Sprintf(`%s("%s")`, tc.Function.Name, firstArg))
+		} else {
+			hints = append(hints, tc.Function.Name)
+		}
+	}
+
+	return "🔧 " + strings.Join(hints, ", ")
 }
