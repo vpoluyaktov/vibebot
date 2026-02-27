@@ -11,17 +11,16 @@ import (
 // Config holds the application configuration
 type Config struct {
 	// Telegram
-	TelegramToken    string
+	TelegramToken        string
 	TelegramAllowedUsers []int64
-	
+
 	// OpenRouter
-	OpenRouterAPIKey    string
-	OpenRouterModel     string
+	OpenRouterAPIKey        string
 	OpenRouterAllowedModels []string
-	
+
 	// Workspace
 	WorkspaceDir string
-	
+
 	// Logging
 	LogLevel string
 }
@@ -32,7 +31,6 @@ func Load() (*Config, error) {
 		TelegramToken:           os.Getenv("TELEGRAM_TOKEN"),
 		TelegramAllowedUsers:    parseAllowedUsers(os.Getenv("TELEGRAM_ALLOWED_USERS")),
 		OpenRouterAPIKey:        os.Getenv("OPENROUTER_API_KEY"),
-		OpenRouterModel:         getEnvOrDefault("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet"),
 		OpenRouterAllowedModels: parseAllowedModels(os.Getenv("OPENROUTER_ALLOWED_MODELS")),
 		WorkspaceDir:            getEnvOrDefault("WORKSPACE_DIR", getDefaultWorkspace()),
 		LogLevel:                getEnvOrDefault("LOG_LEVEL", "info"),
@@ -61,24 +59,24 @@ func parseAllowedUsers(value string) []int64 {
 	if value == "" {
 		return nil // Empty means allow all
 	}
-	
+
 	parts := strings.Split(value, ",")
 	users := make([]int64, 0, len(parts))
-	
+
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
 		if part == "" {
 			continue
 		}
-		
+
 		userID, err := strconv.ParseInt(part, 10, 64)
 		if err != nil {
 			continue // Skip invalid IDs
 		}
-		
+
 		users = append(users, userID)
 	}
-	
+
 	return users
 }
 
@@ -86,17 +84,17 @@ func parseAllowedModels(value string) []string {
 	if value == "" {
 		return nil // No defaults - must be explicitly configured
 	}
-	
+
 	parts := strings.Split(value, ",")
 	models := make([]string, 0, len(parts))
-	
+
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
 		if part != "" {
 			models = append(models, part)
 		}
 	}
-	
+
 	return models
 }
 
