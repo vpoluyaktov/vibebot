@@ -33,7 +33,7 @@ func New(token string, handler MessageHandler, allowedUsers []int64) (*Gateway, 
 	}
 
 	logger.Info("Authorized on account %s", bot.Self.UserName)
-	
+
 	if len(allowedUsers) > 0 {
 		logger.Info("User whitelist enabled: %v", allowedUsers)
 	} else {
@@ -50,7 +50,7 @@ func New(token string, handler MessageHandler, allowedUsers []int64) (*Gateway, 
 		{Command: "projects", Description: "List existing projects"},
 		{Command: "project", Description: "Switch between projects or create/delete projects"},
 	}
-	
+
 	cfg := tgbotapi.NewSetMyCommands(commands...)
 	if _, err := bot.Request(cfg); err != nil {
 		logger.Warn("Failed to register bot commands: %v", err)
@@ -147,14 +147,14 @@ func (g *Gateway) isUserAllowed(userID int64) bool {
 	if len(g.allowedUsers) == 0 {
 		return true
 	}
-	
+
 	// Check if user is in the whitelist
 	for _, allowedID := range g.allowedUsers {
 		if allowedID == userID {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -169,18 +169,18 @@ func (g *Gateway) sendChatAction(chatID int64, action string) error {
 func (g *Gateway) startTypingIndicator(ctx context.Context, chatID int64) func() {
 	// Create a context for the typing indicator
 	typingCtx, cancel := context.WithCancel(ctx)
-	
+
 	// Start goroutine to send typing indicator every 5 seconds
 	go func() {
 		// Send initial typing indicator
 		if err := g.sendChatAction(chatID, "typing"); err != nil {
 			logger.Debug("Failed to send typing indicator: %v", err)
 		}
-		
+
 		// Continue sending every 5 seconds until stopped
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
-		
+
 		for {
 			select {
 			case <-typingCtx.Done():
@@ -192,7 +192,7 @@ func (g *Gateway) startTypingIndicator(ctx context.Context, chatID int64) func()
 			}
 		}
 	}()
-	
+
 	// Return the stop function
 	return cancel
 }
@@ -285,10 +285,10 @@ func markdownToTelegramHTML(text string) string {
 func (g *Gateway) SendMessage(chatID int64, text string) error {
 	// Convert markdown to Telegram HTML
 	html := markdownToTelegramHTML(text)
-	
+
 	msg := tgbotapi.NewMessage(chatID, html)
 	msg.ParseMode = "HTML"
-	
+
 	_, err := g.bot.Send(msg)
 	if err != nil {
 		// If HTML parsing fails, fall back to plain text
@@ -297,7 +297,33 @@ func (g *Gateway) SendMessage(chatID int64, text string) error {
 		msg.ParseMode = ""
 		_, err = g.bot.Send(msg)
 	}
-	
+
+	return err
+}
+
+// SendProgressMessage sends a progress update message (lighter formatting for tool hints)
+func (g *Gateway) SendProgressMessage(chatID int64, text string, isToolHint bool) error {
+	// For tool hints, use monospace formatting
+	if isToolHint {
+		msg := tgbotapi.NewMessage(chatID, text)
+		msg.ParseMode = ""
+		_, err := g.bot.Send(msg)
+		return err
+	}
+
+	// For regular progress, use light HTML formatting
+	html := markdownToTelegramHTML(text)
+	msg := tgbotapi.NewMessage(chatID, html)
+	msg.ParseMode = "HTML"
+
+	_, err := g.bot.Send(msg)
+	if err != nil {
+		// Fall back to plain text
+		msg.Text = text
+		msg.ParseMode = ""
+		_, err = g.bot.Send(msg)
+	}
+
 	return err
 }
 
