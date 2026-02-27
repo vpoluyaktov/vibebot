@@ -362,58 +362,33 @@ func (g *Gateway) SendProgressMessage(chatID int64, text string, isToolHint bool
 }
 
 // splitMessage splits a long message into chunks at natural boundaries
+// Based on nanobot's simpler approach: prefer newlines, then spaces, then hard split
 func splitMessage(text string, maxLength int) []string {
 	if len(text) <= maxLength {
 		return []string{text}
 	}
 
 	var chunks []string
-	lines := strings.Split(text, "\n")
-	currentChunk := ""
-
-	for _, line := range lines {
-		// If adding this line would exceed the limit
-		if len(currentChunk)+len(line)+1 > maxLength {
-			// If current chunk is not empty, save it
-			if currentChunk != "" {
-				chunks = append(chunks, strings.TrimSpace(currentChunk))
-				currentChunk = ""
-			}
-
-			// If single line is too long, split it by sentences
-			if len(line) > maxLength {
-				sentences := strings.Split(line, ". ")
-				for _, sentence := range sentences {
-					if len(currentChunk)+len(sentence)+2 > maxLength {
-						if currentChunk != "" {
-							chunks = append(chunks, strings.TrimSpace(currentChunk))
-							currentChunk = ""
-						}
-						// If single sentence is still too long, hard split
-						if len(sentence) > maxLength {
-							for len(sentence) > maxLength {
-								chunks = append(chunks, sentence[:maxLength])
-								sentence = sentence[maxLength:]
-							}
-							currentChunk = sentence
-						} else {
-							currentChunk = sentence + ". "
-						}
-					} else {
-						currentChunk += sentence + ". "
-					}
-				}
-			} else {
-				currentChunk = line + "\n"
-			}
-		} else {
-			currentChunk += line + "\n"
+	for len(text) > 0 {
+		if len(text) <= maxLength {
+			chunks = append(chunks, text)
+			break
 		}
-	}
 
-	// Add remaining chunk
-	if currentChunk != "" {
-		chunks = append(chunks, strings.TrimSpace(currentChunk))
+		// Try to split at a newline
+		cut := text[:maxLength]
+		pos := strings.LastIndex(cut, "\n")
+		if pos == -1 {
+			// No newline, try to split at a space
+			pos = strings.LastIndex(cut, " ")
+		}
+		if pos == -1 {
+			// No space either, hard split
+			pos = maxLength
+		}
+
+		chunks = append(chunks, text[:pos])
+		text = strings.TrimLeft(text[pos:], " \n")
 	}
 
 	return chunks
