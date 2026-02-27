@@ -281,24 +281,58 @@ func markdownToTelegramHTML(text string) string {
 	return text
 }
 
-// SendMessage sends a text message to a chat
+// SendMessage sends a text message to a chat, splitting if necessary
 func (g *Gateway) SendMessage(chatID int64, text string) error {
+	// Telegram's message limit is 4096 characters
+	const maxLength = 4000 // Leave some margin for HTML tags
+
 	// Convert markdown to Telegram HTML
 	html := markdownToTelegramHTML(text)
 
-	msg := tgbotapi.NewMessage(chatID, html)
-	msg.ParseMode = "HTML"
+	// If message is short enough, send directly
+	if len(html) <= maxLength {
+		msg := tgbotapi.NewMessage(chatID, html)
+		msg.ParseMode = "HTML"
 
-	_, err := g.bot.Send(msg)
-	if err != nil {
-		// If HTML parsing fails, fall back to plain text
-		logger.Warn("HTML parse failed, falling back to plain text: %v", err)
-		msg.Text = text
-		msg.ParseMode = ""
-		_, err = g.bot.Send(msg)
+		_, err := g.bot.Send(msg)
+		if err != nil {
+			// If HTML parsing fails, fall back to plain text
+			logger.Warn("HTML parse failed, falling back to plain text: %v", err)
+			msg.Text = text
+			msg.ParseMode = ""
+			_, err = g.bot.Send(msg)
+		}
+		return err
 	}
 
-	return err
+	// Message is too long - split it
+	logger.Info("Message too long (%d chars), splitting into chunks", len(html))
+	chunks := splitMessage(text, maxLength)
+
+	for i, chunk := range chunks {
+		chunkHTML := markdownToTelegramHTML(chunk)
+		msg := tgbotapi.NewMessage(chatID, chunkHTML)
+		msg.ParseMode = "HTML"
+
+		_, err := g.bot.Send(msg)
+		if err != nil {
+			// Fall back to plain text for this chunk
+			logger.Warn("HTML parse failed for chunk %d, falling back to plain text: %v", i+1, err)
+			msg.Text = chunk
+			msg.ParseMode = ""
+			_, err = g.bot.Send(msg)
+			if err != nil {
+				return fmt.Errorf("failed to send chunk %d: %w", i+1, err)
+			}
+		}
+
+		// Small delay between chunks to avoid rate limiting
+		if i < len(chunks)-1 {
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+
+	return nil
 }
 
 // SendProgressMessage sends a progress update message (lighter formatting for tool hints)
@@ -325,6 +359,64 @@ func (g *Gateway) SendProgressMessage(chatID int64, text string, isToolHint bool
 	}
 
 	return err
+}
+
+// splitMessage splits a long message into chunks at natural boundaries
+func splitMessage(text string, maxLength int) []string {
+	if len(text) <= maxLength {
+		return []string{text}
+	}
+
+	var chunks []string
+	lines := strings.Split(text, "\n")
+	currentChunk := ""
+
+	for _, line := range lines {
+		// If adding this line would exceed the limit
+		if len(currentChunk)+len(line)+1 > maxLength {
+			// If current chunk is not empty, save it
+			if currentChunk != "" {
+				chunks = append(chunks, strings.TrimSpace(currentChunk))
+				currentChunk = ""
+			}
+
+			// If single line is too long, split it by sentences
+			if len(line) > maxLength {
+				sentences := strings.Split(line, ". ")
+				for _, sentence := range sentences {
+					if len(currentChunk)+len(sentence)+2 > maxLength {
+						if currentChunk != "" {
+							chunks = append(chunks, strings.TrimSpace(currentChunk))
+							currentChunk = ""
+						}
+						// If single sentence is still too long, hard split
+						if len(sentence) > maxLength {
+							for len(sentence) > maxLength {
+								chunks = append(chunks, sentence[:maxLength])
+								sentence = sentence[maxLength:]
+							}
+							currentChunk = sentence
+						} else {
+							currentChunk = sentence + ". "
+						}
+					} else {
+						currentChunk += sentence + ". "
+					}
+				}
+			} else {
+				currentChunk = line + "\n"
+			}
+		} else {
+			currentChunk += line + "\n"
+		}
+	}
+
+	// Add remaining chunk
+	if currentChunk != "" {
+		chunks = append(chunks, strings.TrimSpace(currentChunk))
+	}
+
+	return chunks
 }
 
 // GetChatID converts a string chat ID to int64
