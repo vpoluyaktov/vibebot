@@ -196,3 +196,85 @@ func (s *Session) ClearProject() {
 	s.CurrentProject = ""
 	s.UpdatedAt = time.Now()
 }
+
+// NeedsConsolidation checks if the session exceeds the consolidation threshold
+func (s *Session) NeedsConsolidation(threshold int) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return len(s.Messages) > threshold
+}
+
+// GetMessagesForConsolidation returns messages that need to be consolidated
+func (s *Session) GetMessagesForConsolidation(batchSize int) []llm.Message {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if s.LastConsolidated >= len(s.Messages) {
+		return nil
+	}
+
+	end := s.LastConsolidated + batchSize
+	if end > len(s.Messages) {
+		end = len(s.Messages)
+	}
+
+	// Return a copy to avoid race conditions
+	messages := make([]llm.Message, end-s.LastConsolidated)
+	copy(messages, s.Messages[s.LastConsolidated:end])
+
+	return messages
+}
+
+// MarkConsolidated marks messages as consolidated
+func (s *Session) MarkConsolidated(count int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.LastConsolidated += count
+	if s.LastConsolidated > len(s.Messages) {
+		s.LastConsolidated = len(s.Messages)
+	}
+	s.UpdatedAt = time.Now()
+}
+
+// PruneConsolidated removes consolidated messages to save space
+// This is optional and can be enabled later if needed
+func (s *Session) PruneConsolidated() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.LastConsolidated > 0 && s.LastConsolidated < len(s.Messages) {
+		// Keep only unconsolidated messages
+		s.Messages = s.Messages[s.LastConsolidated:]
+		s.LastConsolidated = 0
+		s.UpdatedAt = time.Now()
+	}
+}
+
+// GetSession retrieves a session from cache or disk
+func (m *Manager) GetSession(key string) (*Session, error) {
+	m.mu.RLock()
+	if session, exists := m.cache[key]; exists {
+		m.mu.RUnlock()
+		return session, nil
+	}
+	m.mu.RUnlock()
+
+	// Try to load from disk
+	session := m.load(key)
+	if session == nil {
+		return nil, fmt.Errorf("session not found: %s", key)
+	}
+
+	m.mu.Lock()
+	m.cache[key] = session
+	m.mu.Unlock()
+
+	return session, nil
+}
+
+// SaveSession is an alias for Save for consistency
+func (m *Manager) SaveSession(session *Session) error {
+	return m.Save(session)
+}

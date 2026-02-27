@@ -268,3 +268,101 @@ func (m *Memory) ProjectExists(projectName string) bool {
 	_, err := os.Stat(projectPath)
 	return err == nil
 }
+
+// LoadGlobalMemory is an alias for LoadMemory for consistency
+func (m *Memory) LoadGlobalMemory() (string, error) {
+	return m.LoadMemory()
+}
+
+// SaveGlobalMemory is an alias for SaveMemory for consistency
+func (m *Memory) SaveGlobalMemory(content string) error {
+	return m.SaveMemory(content)
+}
+
+// AppendGlobalFacts appends facts to GlobalMemory.md
+func (m *Memory) AppendGlobalFacts(facts []string) error {
+	if len(facts) == 0 {
+		return nil
+	}
+
+	// Read current content
+	content, err := m.LoadGlobalMemory()
+	if err != nil {
+		return fmt.Errorf("failed to load global memory: %w", err)
+	}
+
+	// Find or create "## Consolidated Facts" section
+	timestamp := time.Now().UTC().Format("2006-01-02 15:04")
+
+	// Build new facts section
+	var newSection strings.Builder
+	newSection.WriteString("\n\n## Consolidated Facts (")
+	newSection.WriteString(timestamp)
+	newSection.WriteString(")\n\n")
+	for _, fact := range facts {
+		newSection.WriteString("- ")
+		newSection.WriteString(fact)
+		newSection.WriteString("\n")
+	}
+
+	// Append to content
+	newContent := content + newSection.String()
+
+	return m.SaveGlobalMemory(newContent)
+}
+
+// AppendProjectFacts appends facts to a project memory file
+func (m *Memory) AppendProjectFacts(projectName string, facts []string) error {
+	if len(facts) == 0 {
+		return nil
+	}
+
+	if err := m.ValidateProjectName(projectName); err != nil {
+		return err
+	}
+
+	// Read current content
+	content, err := m.LoadProjectMemory(projectName)
+	if err != nil {
+		return fmt.Errorf("failed to load project memory: %w", err)
+	}
+
+	// Build new facts section
+	timestamp := time.Now().UTC().Format("2006-01-02 15:04")
+	var newSection strings.Builder
+	newSection.WriteString("\n\n## Consolidated Facts (")
+	newSection.WriteString(timestamp)
+	newSection.WriteString(")\n\n")
+	for _, fact := range facts {
+		newSection.WriteString("- ")
+		newSection.WriteString(fact)
+		newSection.WriteString("\n")
+	}
+
+	// Append to content
+	newContent := content + newSection.String()
+
+	return m.SaveProjectMemory(projectName, newContent)
+}
+
+// AppendConsolidationSummary appends a consolidation summary to HISTORY.md
+func (m *Memory) AppendConsolidationSummary(summary string, projectName string) error {
+	timestamp := time.Now().UTC().Format("2006-01-02 15:04:05 UTC")
+
+	var entry strings.Builder
+	entry.WriteString("\n---\n")
+	entry.WriteString("## Consolidation Summary - ")
+	entry.WriteString(timestamp)
+	entry.WriteString("\n")
+
+	if projectName != "" {
+		entry.WriteString("**Project**: ")
+		entry.WriteString(projectName)
+		entry.WriteString("\n\n")
+	}
+
+	entry.WriteString(summary)
+	entry.WriteString("\n")
+
+	return m.AppendHistory(entry.String())
+}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/vpoluyaktov/vibebot/internal/consolidation"
 	"github.com/vpoluyaktov/vibebot/internal/llm"
 	"github.com/vpoluyaktov/vibebot/internal/logger"
 	"github.com/vpoluyaktov/vibebot/internal/memory"
@@ -15,24 +16,28 @@ import (
 
 const maxToolIterations = 40 // Prevent infinite loops (matches nanobot default)
 const maxHistoryMessages = 50 // Maximum messages to include in context
+const consolidationThreshold = 100 // Trigger consolidation when session exceeds this
+const consolidationBatchSize = 50  // How many old messages to consolidate at once
 
 // Agent represents the core AI agent
 type Agent struct {
-	llm          llm.Provider
-	memory       *memory.Memory
-	tools        *tools.Registry
-	sessions     *session.Manager
-	modelManager *modelmanager.Manager
+	llm           llm.Provider
+	memory        *memory.Memory
+	tools         *tools.Registry
+	sessions      *session.Manager
+	modelManager  *modelmanager.Manager
+	consolidator  *consolidation.Consolidator
 }
 
 // New creates a new Agent instance
 func New(provider llm.Provider, mem *memory.Memory, toolRegistry *tools.Registry, sessionMgr *session.Manager, modelMgr *modelmanager.Manager) *Agent {
 	return &Agent{
-		llm:          provider,
-		memory:       mem,
-		tools:        toolRegistry,
-		sessions:     sessionMgr,
-		modelManager: modelMgr,
+		llm:           provider,
+		memory:        mem,
+		tools:         toolRegistry,
+		sessions:      sessionMgr,
+		modelManager:  modelMgr,
+		consolidator:  consolidation.New(provider, mem),
 	}
 }
 
@@ -230,7 +235,76 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 		logger.Warn("Failed to log conversation: %v", err)
 	}
 
+	// Check if consolidation is needed (run in background)
+	if sess.NeedsConsolidation(consolidationThreshold) {
+		sessionKey := fmt.Sprintf("telegram:%d", chatID)
+		logger.Info("Session %s needs consolidation (%d messages)", sessionKey, len(sess.Messages))
+		go a.consolidateSession(sessionKey)
+	}
+
 	return finalResponse, nil
+}
+
+// consolidateSession performs background consolidation of old messages
+func (a *Agent) consolidateSession(sessionKey string) {
+	ctx := context.Background()
+
+	sess, err := a.sessions.GetSession(sessionKey)
+	if err != nil {
+		logger.Error("Failed to get session for consolidation: %v", err)
+		return
+	}
+
+	// Get messages to consolidate
+	messages := sess.GetMessagesForConsolidation(consolidationBatchSize)
+	if len(messages) == 0 {
+		logger.Debug("No messages to consolidate for session %s", sessionKey)
+		return
+	}
+
+	logger.Info("Consolidating %d messages for session %s", len(messages), sessionKey)
+
+	// Run consolidation
+	result, err := a.consolidator.ConsolidateMessages(ctx, messages, sess.GetProject())
+	if err != nil {
+		logger.Error("Consolidation failed for session %s: %v", sessionKey, err)
+		return
+	}
+
+	// Update memory files
+	if len(result.GlobalFacts) > 0 {
+		logger.Info("Appending %d global facts to GlobalMemory.md", len(result.GlobalFacts))
+		if err := a.memory.AppendGlobalFacts(result.GlobalFacts); err != nil {
+			logger.Error("Failed to append global facts: %v", err)
+		}
+	}
+
+	if sess.GetProject() != "" && len(result.ProjectFacts) > 0 {
+		logger.Info("Appending %d project facts to project '%s'", len(result.ProjectFacts), sess.GetProject())
+		if err := a.memory.AppendProjectFacts(sess.GetProject(), result.ProjectFacts); err != nil {
+			logger.Error("Failed to append project facts: %v", err)
+		}
+	}
+
+	// Append summary to HISTORY.md
+	if err := a.memory.AppendConsolidationSummary(result.Summary, sess.GetProject()); err != nil {
+		logger.Error("Failed to append consolidation summary: %v", err)
+	}
+
+	// Mark messages as consolidated
+	sess.MarkConsolidated(len(messages))
+
+	// Optional: Prune consolidated messages to save space
+	// Disabled for now - keeping full history
+	// sess.PruneConsolidated()
+
+	// Save updated session
+	if err := a.sessions.SaveSession(sess); err != nil {
+		logger.Error("Failed to save session after consolidation: %v", err)
+		return
+	}
+
+	logger.Info("Consolidation complete for session %s (LastConsolidated: %d)", sessionKey, sess.LastConsolidated)
 }
 
 // handleModelCommand processes /model commands

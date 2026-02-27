@@ -84,12 +84,14 @@ func (g *Gateway) Start(ctx context.Context) error {
 
 			// Check and mark message as processed atomically to prevent duplicates
 			g.msgMutex.Lock()
-			if g.processedMsgIDs[update.Message.MessageID] {
+			msgID := update.Message.MessageID
+			if g.processedMsgIDs[msgID] {
 				g.msgMutex.Unlock()
-				logger.Debug("Skipping duplicate message ID: %d", update.Message.MessageID)
+				logger.Debug("Skipping duplicate message ID: %d", msgID)
 				continue
 			}
-			g.processedMsgIDs[update.Message.MessageID] = true
+			logger.Debug("Marking message ID %d as processed", msgID)
+			g.processedMsgIDs[msgID] = true
 			g.msgMutex.Unlock()
 
 			// Handle the message in a goroutine to avoid blocking
