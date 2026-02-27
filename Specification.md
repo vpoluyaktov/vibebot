@@ -424,24 +424,103 @@ journalctl -u vibebot -f
 
 ## Future Enhancements
 
-**High Priority**:
-- Web search tool
-- Web fetch tool
-- Cron/scheduling system
+Based on analysis of nanobot (the Python-based template project), the following features could be valuable additions to vibebot:
 
-**Medium Priority**:
-- Self-modification capabilities
-- Additional LLM providers (Anthropic direct, OpenAI)
-- Discord gateway
-- CLI gateway
-- Metrics and observability
+### 1. Web Tools 🌐 (High Priority)
 
-**Low Priority**:
-- Vector embeddings for semantic search
-- Automatic memory consolidation improvements
-- Plugin system for third-party tools
-- Web UI for configuration
-- Per-user workspaces
+**web_search** - Search the web using Brave Search API
+- **Value**: Allows bot to search for current information, documentation, news
+- **Requirements**: Brave API key (free tier: 2,000 queries/month)
+- **Implementation**: Medium effort - HTTP client + JSON parsing
+- **API**: https://brave.com/search/api/
+
+**web_fetch** - Fetch and extract content from URLs
+- **Value**: Extract readable content from web pages (HTML → markdown/text)
+- **Requirements**: None (uses direct HTTP requests)
+- **Implementation**: Medium effort - HTTP client + HTML parsing/readability
+- **Features**: 
+  - Automatic content extraction using readability algorithm
+  - Support for JSON, HTML, and plain text
+  - Configurable max length (default 50KB)
+  - Returns structured JSON with URL, status, content
+
+**Recommendation**: Implement both. web_fetch doesn't need API key and is immediately useful. web_search requires Brave API key but adds significant value.
+
+### 2. Cron/Scheduling Tool ⏰ (Medium Priority)
+
+Schedule reminders and recurring tasks:
+- **Features**:
+  - One-time reminders (ISO datetime)
+  - Recurring tasks (cron expressions with timezone support)
+  - Interval-based tasks (every N seconds)
+  - List and remove scheduled jobs
+- **Value**: Users can set reminders, scheduled checks, periodic tasks
+- **Requirements**: 
+  - Persistent job storage (JSON file or database)
+  - Background scheduler (goroutine with ticker)
+  - Timezone support (time/tzdata)
+- **Implementation**: High effort - need cron service, job persistence, background execution
+- **Example**: `cron(action="add", message="Check server", cron_expr="0 9 * * *", tz="America/Vancouver")`
+
+**Recommendation**: Consider for v2.0. Start with simple one-time reminders, add cron expressions later.
+
+### 3. Spawn/Subagent Tool 🤖 (Low Priority)
+
+Spawn background subagents for long-running tasks:
+- **Features**:
+  - Execute complex tasks in background
+  - Report back when complete
+  - Independent tool execution
+- **Value**: Handle multi-step tasks without blocking main agent
+- **Requirements**: 
+  - Subagent manager
+  - Task queue
+  - Async execution framework
+- **Implementation**: Very high effort - complex architecture change
+
+**Recommendation**: Skip for now. Current 40-iteration limit handles most tasks adequately. This adds significant complexity.
+
+### 4. Skills System 🎯 (Low Priority)
+
+Extensible skills loaded from markdown files:
+- **Features**:
+  - Skills as .md files with YAML frontmatter
+  - Requirement checking (binaries, env vars)
+  - Always-loaded vs on-demand skills
+  - Builtin and user-defined skills
+- **Value**: Extensibility, custom workflows
+- **Requirements**: Skill loader, metadata parser, requirement checker
+- **Implementation**: High effort
+
+**Recommendation**: Skip for now. Current tool system is sufficient. Skills add complexity without clear immediate value.
+
+### 5. Multiple Channel Support 📱 (Low Priority)
+
+Support additional messaging platforms:
+- **Options**: Discord, Slack, Matrix, WhatsApp, Email, etc.
+- **Value**: Reach users on different platforms
+- **Implementation**: Very high effort - each channel needs separate integration
+
+**Recommendation**: Skip. Telegram is sufficient for current use case. Each additional channel requires significant maintenance.
+
+### Implementation Priority
+
+**Phase 1 (Immediate - High Value, Medium Effort)**:
+1. ✅ Dynamic system prompt with runtime info (DONE)
+2. ✅ Message splitting for long responses (DONE)
+3. ✅ Progress updates during task execution (DONE)
+4. 🔜 web_fetch tool (no API key needed)
+5. 🔜 web_search tool (requires Brave API key)
+
+**Phase 2 (Future - Medium Value, High Effort)**:
+1. Simple one-time reminders
+2. Cron-based scheduling
+3. Enhanced error handling and retry logic
+
+**Not Planned**:
+- Spawn/subagent system (too complex)
+- Skills system (unnecessary complexity)
+- Multiple channels (maintenance burden)
 
 ---
 
