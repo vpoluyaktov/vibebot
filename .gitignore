@@ -26,6 +26,7 @@ go.work
 
 # Runtime data
 workspace/
+memory/
 *.db
 *.log
 

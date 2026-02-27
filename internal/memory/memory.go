@@ -206,6 +206,7 @@ Active
 
 ## Key Facts
 - Created: %s
+- Project code location: /mnt/hostgit/vibebot
 - 
 
 ## Current Focus
