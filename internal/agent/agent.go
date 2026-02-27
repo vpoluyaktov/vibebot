@@ -70,6 +70,18 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 		return a.handleModelCommand(message)
 	}
 
+	// Handle /projects command
+	if message == "/projects" {
+		logger.Debug("Handling /projects command directly (no LLM)")
+		return a.handleProjectsCommand(chatID)
+	}
+
+	// Handle /project command
+	if strings.HasPrefix(message, "/project") {
+		logger.Debug("Handling /project command directly (no LLM)")
+		return a.handleProjectCommand(chatID, message)
+	}
+
 	// Get or create session for this chat
 	sess := a.sessions.GetOrCreate(chatID)
 
@@ -79,17 +91,39 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 		Content: message,
 	})
 
-	// Load memory context
+	// Load global memory context
 	memoryContent, err := a.memory.LoadMemory()
 	if err != nil {
 		logger.Warn("Failed to load memory: %v", err)
 		memoryContent = ""
 	}
 
+	// Load project memory if a project is active
+	currentProject := sess.GetProject()
+	var projectMemory string
+	if currentProject != "" {
+		projectMemory, err = a.memory.LoadProjectMemory(currentProject)
+		if err != nil {
+			logger.Warn("Failed to load project memory for '%s': %v", currentProject, err)
+			// Clear invalid project from session
+			sess.ClearProject()
+			if saveErr := a.sessions.Save(sess); saveErr != nil {
+				logger.Warn("Failed to save session after clearing invalid project: %v", saveErr)
+			}
+			projectMemory = ""
+			currentProject = ""
+		} else {
+			logger.Debug("Loaded project memory for '%s' (%d bytes)", currentProject, len(projectMemory))
+		}
+	}
+
 	// Build system message
 	systemMessage := systemPrompt
 	if memoryContent != "" {
-		systemMessage += "\n\n## Current Memory (GlobalMemory.md)\n\n" + memoryContent
+		systemMessage += "\n\n## Global Memory (GlobalMemory.md)\n\n" + memoryContent
+	}
+	if currentProject != "" && projectMemory != "" {
+		systemMessage += fmt.Sprintf("\n\n## Current Project: %s\n\n%s", currentProject, projectMemory)
 	}
 
 	// Build messages array: system + conversation history
@@ -261,6 +295,158 @@ func (a *Agent) handleModelCommand(message string) (string, error) {
 	}
 	
 	return "❌ Invalid command. Use `/model list` or `/model <number|name>`", nil
+}
+
+// handleProjectsCommand lists all available projects
+func (a *Agent) handleProjectsCommand(chatID int64) (string, error) {
+	// Get current project from session
+	sess := a.sessions.GetOrCreate(chatID)
+	currentProject := sess.GetProject()
+	
+	// List all projects using memory manager
+	projects, err := a.memory.ListProjects()
+	if err != nil {
+		return fmt.Sprintf("❌ Error reading projects: %v", err), nil
+	}
+	
+	if len(projects) == 0 {
+		return "📂 **Projects**\n\nNo projects found. Use `/project create <name>` to create one.", nil
+	}
+	
+	var response strings.Builder
+	response.WriteString(fmt.Sprintf("📂 **Projects** (%d total)\n\n", len(projects)))
+	
+	for _, project := range projects {
+		if project == currentProject {
+			response.WriteString(fmt.Sprintf("✅ `%s` (current)\n", project))
+		} else {
+			response.WriteString(fmt.Sprintf("   `%s`\n", project))
+		}
+	}
+	
+	response.WriteString("\n💡 Use `/project <name>` to switch")
+	if currentProject != "" {
+		response.WriteString("\n💡 Use `/project clear` to clear current project")
+	}
+	response.WriteString("\n💡 Use `/project create <name>` to create new")
+	return response.String(), nil
+}
+
+// handleProjectCommand manages project creation, switching, and deletion
+func (a *Agent) handleProjectCommand(chatID int64, message string) (string, error) {
+	parts := strings.Fields(message)
+	
+	if len(parts) < 2 {
+		return "❌ Usage:\n" +
+			"- `/project create <name>` - Create a new project\n" +
+			"- `/project <name>` - Switch to a project\n" +
+			"- `/project delete <name>` - Delete a project\n" +
+			"- `/project clear` - Clear current project\n" +
+			"- `/projects` - List all projects", nil
+	}
+	
+	sess := a.sessions.GetOrCreate(chatID)
+	subcommand := parts[1]
+	
+	// Handle /project create <name>
+	if subcommand == "create" {
+		if len(parts) < 3 {
+			return "❌ Usage: `/project create <name>`", nil
+		}
+		
+		projectName := parts[2]
+		
+		// Validate project name
+		if err := a.memory.ValidateProjectName(projectName); err != nil {
+			return fmt.Sprintf("❌ Invalid project name: %v", err), nil
+		}
+		
+		// Check if project already exists
+		if a.memory.ProjectExists(projectName) {
+			return fmt.Sprintf("❌ Project `%s` already exists!", projectName), nil
+		}
+		
+		// Create project using memory manager
+		if err := a.memory.CreateProject(projectName); err != nil {
+			return fmt.Sprintf("❌ Error creating project: %v", err), nil
+		}
+		
+		// Automatically switch to the new project
+		sess.SetProject(projectName)
+		if err := a.sessions.Save(sess); err != nil {
+			logger.Warn("Failed to save session after creating project: %v", err)
+		}
+		
+		logger.Info("Created and switched to project: %s", projectName)
+		return fmt.Sprintf("✅ Project `%s` created and activated!\n\nYou can now add project-specific context. Use `/project clear` to return to global context.", projectName), nil
+	}
+	
+	// Handle /project delete <name>
+	if subcommand == "delete" {
+		if len(parts) < 3 {
+			return "❌ Usage: `/project delete <name>`", nil
+		}
+		
+		projectName := parts[2]
+		currentProject := sess.GetProject()
+		
+		// Prevent deleting current project
+		if projectName == currentProject {
+			return fmt.Sprintf("❌ Cannot delete active project `%s`!\n\nUse `/project clear` first, then delete.", projectName), nil
+		}
+		
+		// Delete project using memory manager
+		if err := a.memory.DeleteProject(projectName); err != nil {
+			return fmt.Sprintf("❌ Error deleting project: %v", err), nil
+		}
+		
+		logger.Info("Deleted project: %s", projectName)
+		return fmt.Sprintf("✅ Project `%s` deleted!", projectName), nil
+	}
+	
+	// Handle /project clear - clear current project
+	if subcommand == "clear" {
+		currentProject := sess.GetProject()
+		if currentProject == "" {
+			return "ℹ️ No active project. Already using global context only.", nil
+		}
+		
+		sess.ClearProject()
+		if err := a.sessions.Save(sess); err != nil {
+			logger.Warn("Failed to save session after clearing project: %v", err)
+		}
+		
+		logger.Info("Cleared project context for chat %d (was: %s)", chatID, currentProject)
+		return fmt.Sprintf("✅ Cleared project `%s`\n\nNow using global context only.", currentProject), nil
+	}
+	
+	// Handle /project <name> - switch to project
+	projectName := subcommand
+	
+	// Validate project name
+	if err := a.memory.ValidateProjectName(projectName); err != nil {
+		return fmt.Sprintf("❌ Invalid project name: %v", err), nil
+	}
+	
+	// Check if project exists
+	if !a.memory.ProjectExists(projectName) {
+		return fmt.Sprintf("❌ Project `%s` does not exist!\n\nUse `/projects` to see available projects or `/project create %s` to create it.", projectName, projectName), nil
+	}
+	
+	// Load project memory to verify it's readable
+	projectMemory, err := a.memory.LoadProjectMemory(projectName)
+	if err != nil {
+		return fmt.Sprintf("❌ Error loading project: %v", err), nil
+	}
+	
+	// Switch to project
+	sess.SetProject(projectName)
+	if err := a.sessions.Save(sess); err != nil {
+		logger.Warn("Failed to save session after switching project: %v", err)
+	}
+	
+	logger.Info("Switched to project: %s (chat %d)", projectName, chatID)
+	return fmt.Sprintf("✅ Switched to project `%s`\n\nProject memory loaded (%d bytes). All context is now project-specific.", projectName, len(projectMemory)), nil
 }
 
 // parseModelNumber tries to parse a string as a positive integer
