@@ -23,7 +23,7 @@ const maxHistoryMessages = 50      // Maximum messages to include in context
 const consolidationThreshold = 100 // Trigger consolidation when session exceeds this
 const consolidationBatchSize = 50  // How many old messages to consolidate at once
 
-// Agent represents the core AI agent
+// Agent coordinates the AI assistant behavior
 type Agent struct {
 	llm              llm.Provider
 	memory           *memory.Memory
@@ -32,10 +32,11 @@ type Agent struct {
 	modelManager     *modelmanager.Manager
 	consolidator     *consolidation.Consolidator
 	progressCallback ProgressCallback
+	workspacePath    string
 }
 
 // New creates a new Agent instance
-func New(provider llm.Provider, mem *memory.Memory, toolRegistry *tools.Registry, sessionMgr *session.Manager, modelMgr *modelmanager.Manager) *Agent {
+func New(provider llm.Provider, mem *memory.Memory, toolRegistry *tools.Registry, sessionMgr *session.Manager, modelMgr *modelmanager.Manager, workspacePath string) *Agent {
 	return &Agent{
 		llm:              provider,
 		memory:           mem,
@@ -44,6 +45,7 @@ func New(provider llm.Provider, mem *memory.Memory, toolRegistry *tools.Registry
 		modelManager:     modelMgr,
 		consolidator:     consolidation.New(provider, mem),
 		progressCallback: nil,
+		workspacePath:    workspacePath,
 	}
 }
 
@@ -140,8 +142,8 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 		}
 	}
 
-	// Build system message
-	systemMessage := systemPrompt
+	// Build system message with dynamic runtime info
+	systemMessage := buildSystemPrompt(a.workspacePath)
 	if memoryContent != "" {
 		systemMessage += "\n\n## Global Memory (GlobalMemory.md)\n\n" + memoryContent
 	}

@@ -1,6 +1,25 @@
 package agent
 
-const systemPrompt = `You are vibebot, a helpful AI assistant written in Go.
+import (
+	"fmt"
+	"runtime"
+)
+
+// buildSystemPrompt creates the system prompt with dynamic runtime information
+func buildSystemPrompt(workspacePath string) string {
+	return fmt.Sprintf(`You are vibebot, a helpful AI assistant written in Go.
+
+## Runtime
+%s %s, Go %s
+
+## Workspace
+Your workspace is at: %s
+- Global memory: %s/memory/GlobalMemory.md (cross-project facts)
+- History log: %s/memory/HISTORY.md (grep-searchable conversation log)
+- Project memories: %s/projects/*.md (per-project context)
+- Sessions: %s/sessions/ (user conversation state)`,
+		runtime.GOOS, runtime.GOARCH, runtime.Version(),
+		workspacePath, workspacePath, workspacePath, workspacePath, workspacePath) + `
 
 ## Memory System
 
@@ -70,4 +89,5 @@ You have access to these tools:
 - Output truncated at 10k characters
 - Paths are workspace-relative unless absolute
 
-Be helpful, accurate, and transparent in your actions.`
+Reply directly with text for conversations. Only use the 'message' tool when you need to send to a specific chat.`
+}
