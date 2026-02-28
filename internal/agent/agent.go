@@ -163,6 +163,7 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 
 	// Agent loop: handle tool calls iteratively
 	var finalResponse string
+	var totalPromptTokens, totalCompletionTokens, totalTokens int
 	for i := 0; i < maxToolIterations; i++ {
 		logger.Debug("Agent loop iteration %d/%d", i+1, maxToolIterations)
 
@@ -175,7 +176,12 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 			logger.Error("Unexpected LLM error (iteration %d): %v", i+1, err)
 			return fmt.Sprintf("⚠️ Unexpected error: %v", err), err
 		}
-		logger.Debug("LLM response: content_len=%d, tool_calls=%d, finish_reason=%s", len(response.Content), len(response.ToolCalls), response.FinishReason)
+		// Track token usage
+		totalPromptTokens += response.Usage.PromptTokens
+		totalCompletionTokens += response.Usage.CompletionTokens
+		totalTokens += response.Usage.TotalTokens
+
+		logger.Debug("LLM response: content_len=%d, tool_calls=%d, finish_reason=%s, tokens=%d", len(response.Content), len(response.ToolCalls), response.FinishReason, response.Usage.TotalTokens)
 
 		// Clean response content from XML artifacts (some models output <tool_call> tags)
 		if response.Content != "" {
@@ -193,14 +199,15 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 			a.progressCallback(chatID, response.Content, false)
 		}
 
-		// Add assistant message with tool calls
+		// Add assistant message with tool calls to LLM context (for conversation loop only)
 		assistantMsg := llm.Message{
 			Role:      "assistant",
 			Content:   response.Content,
 			ToolCalls: response.ToolCalls,
 		}
 		messages = append(messages, assistantMsg)
-		sess.AddMessage(assistantMsg)
+		
+		// Don't save tool call messages to session - they're implementation details
 
 		// Execute each tool call
 		for _, toolCall := range response.ToolCalls {
@@ -224,14 +231,13 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 				logger.Debug("Tool %s completed successfully: %s", toolCall.Function.Name, resultSummary)
 			}
 
-			// Add tool result as a message
+			// Add tool result to LLM context (for conversation loop only)
 			toolMsg := llm.Message{
 				Role:       "tool",
 				Content:    result,
 				ToolCallID: toolCall.ID,
 			}
 			messages = append(messages, toolMsg)
-			sess.AddMessage(toolMsg)
 		}
 
 		// Continue loop to let LLM process tool results
@@ -270,7 +276,31 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 		go a.consolidateSession(sessionKey)
 	}
 
+	// Append token usage stats to final response
+	tokenStats := fmt.Sprintf("\n\n📊 Tokens used: %s prompt + %s completion = %s total",
+		formatNumber(totalPromptTokens),
+		formatNumber(totalCompletionTokens),
+		formatNumber(totalTokens))
+	finalResponse += tokenStats
+
 	return finalResponse, nil
+}
+
+// formatNumber formats a number with thousand separators
+func formatNumber(n int) string {
+	s := fmt.Sprintf("%d", n)
+	if len(s) <= 3 {
+		return s
+	}
+	
+	var result []byte
+	for i, c := range []byte(s) {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			result = append(result, ',')
+		}
+		result = append(result, c)
+	}
+	return string(result)
 }
 
 // consolidateSession performs background consolidation of old messages

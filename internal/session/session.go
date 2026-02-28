@@ -99,17 +99,10 @@ func (s *Session) GetHistory(maxMessages int) []llm.Message {
 		start = len(unconsolidated) - maxMessages
 	}
 	
-	sliced := unconsolidated[start:]
-
-	// Drop leading non-user messages to avoid orphaned tool results
-	for i, m := range sliced {
-		if m.Role == "user" {
-			return sliced[i:]
-		}
-	}
-
-	return sliced
+	return unconsolidated[start:]
 }
+
+
 
 // Clear clears all messages in the session
 func (s *Session) Clear() {
@@ -219,11 +212,8 @@ func (s *Session) GetMessagesForConsolidation(batchSize int) []llm.Message {
 		end = len(s.Messages)
 	}
 
-	// Return a copy to avoid race conditions
-	messages := make([]llm.Message, end-s.LastConsolidated)
-	copy(messages, s.Messages[s.LastConsolidated:end])
-
-	return messages
+	// Return unconsolidated messages
+	return s.Messages[s.LastConsolidated:end]
 }
 
 // MarkConsolidated marks messages as consolidated
