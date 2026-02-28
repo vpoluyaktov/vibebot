@@ -276,11 +276,33 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 		go a.consolidateSession(sessionKey)
 	}
 
-	// Append token usage stats to final response
-	tokenStats := fmt.Sprintf("\n\n📊 Tokens used: %s prompt + %s completion = %s total",
-		formatNumber(totalPromptTokens),
-		formatNumber(totalCompletionTokens),
-		formatNumber(totalTokens))
+	// Append token usage and context window stats to final response
+	contextSize := len(sess.GetHistory(maxHistoryMessages))
+	
+	// Build stats string with optional context window percentage
+	var tokenStats string
+	contextLength := a.modelManager.GetContextLength()
+	if contextLength > 0 {
+		// Calculate percentage of context window used
+		percentage := float64(totalPromptTokens) / float64(contextLength) * 100
+		tokenStats = fmt.Sprintf("\n\n📊 Tokens: %s prompt + %s completion = %s total | Context: %.1f%% (%s/%s) | History: %d/%d msgs",
+			formatNumber(totalPromptTokens),
+			formatNumber(totalCompletionTokens),
+			formatNumber(totalTokens),
+			percentage,
+			formatNumber(totalPromptTokens),
+			formatNumber(contextLength),
+			contextSize,
+			maxHistoryMessages)
+	} else {
+		// Fallback if context length not available
+		tokenStats = fmt.Sprintf("\n\n📊 Tokens: %s prompt + %s completion = %s total | History: %d/%d msgs",
+			formatNumber(totalPromptTokens),
+			formatNumber(totalCompletionTokens),
+			formatNumber(totalTokens),
+			contextSize,
+			maxHistoryMessages)
+	}
 	finalResponse += tokenStats
 
 	return finalResponse, nil

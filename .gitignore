@@ -38,3 +38,6 @@ memory/
 # OS
 .DS_Store
 Thumbs.db
+
+# Build output
+bin/

@@ -10,10 +10,11 @@ import (
 
 // Manager handles model selection and validation
 type Manager struct {
-	mu            sync.RWMutex
-	currentModel  string
-	allowedModels []string
-	stateFile     string
+	mu             sync.RWMutex
+	currentModel   string
+	allowedModels  []string
+	contextLengths map[string]int // model ID -> context length
+	stateFile      string
 }
 
 // New creates a new model manager
@@ -21,9 +22,10 @@ func New(currentModel string, allowedModels []string, workspaceDir string) *Mana
 	stateFile := filepath.Join(workspaceDir, "memory", "current_model.txt")
 	
 	m := &Manager{
-		currentModel:  currentModel,
-		allowedModels: allowedModels,
-		stateFile:     stateFile,
+		currentModel:   currentModel,
+		allowedModels:  allowedModels,
+		contextLengths: make(map[string]int),
+		stateFile:      stateFile,
 	}
 	
 	// Try to load saved model preference
@@ -110,4 +112,21 @@ func (m *Manager) loadSavedModel() (string, error) {
 	
 	// Trim whitespace and return the model name
 	return strings.TrimSpace(string(data)), nil
+}
+
+// SetContextLengths sets the context lengths for models (called during initialization)
+func (m *Manager) SetContextLengths(contextLengths map[string]int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.contextLengths = contextLengths
+}
+
+// GetContextLength returns the context length for the current model, or 0 if unknown
+func (m *Manager) GetContextLength() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if length, ok := m.contextLengths[m.currentModel]; ok {
+		return length
+	}
+	return 0
 }
