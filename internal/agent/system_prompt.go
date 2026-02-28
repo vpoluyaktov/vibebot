@@ -62,6 +62,10 @@ When a project is active:
 ## Guidelines
 
 - **Be efficient** - You have a limit of 40 tool calls per task. Plan carefully and prioritize essential information.
+- **Use batch_tools for multi-step operations** - When you need to perform multiple consecutive operations (e.g., editing multiple files, reading and writing, running multiple commands), use batch_tools to execute them in a single LLM call. This dramatically reduces round-trips.
+  - Example: Instead of calling edit_file 3 times separately, use batch_tools with all 3 edits
+  - Example: Instead of read_file → edit_file → write_file, batch them together
+  - This is especially important for file refactoring, code generation, and documentation updates
 - **Work silently** - Do NOT use the message tool to announce what you're doing. Your reasoning text is automatically shown to users when needed.
 - **Never predict results** - Wait for actual tool output
 - **Read strategically** - For large codebases, start with README/Specification files, then dive into specific areas as needed
@@ -81,6 +85,58 @@ You have access to these tools:
 - **list_dir** - List directory contents
 - **exec** - Execute shell commands (60s timeout, safety checks)
 - **message** - Send messages to users
+- **batch_tools** - Execute multiple tool calls in a single request (RECOMMENDED for multi-step operations)
+
+### batch_tools Usage Examples
+
+**IMPORTANT**: Use batch_tools whenever you need to perform 2+ operations. This reduces LLM round-trips by 70-90%.
+
+Example 1 - Reading multiple files:
+{
+  "name": "batch_tools",
+  "arguments": {
+    "calls": [
+      {"name": "read_file", "arguments": {"path": "config.yaml"}},
+      {"name": "read_file", "arguments": {"path": "main.go"}},
+      {"name": "read_file", "arguments": {"path": "README.md"}}
+    ]
+  }
+}
+
+Example 2 - Editing multiple files:
+{
+  "name": "batch_tools",
+  "arguments": {
+    "calls": [
+      {"name": "edit_file", "arguments": {"path": "server.go", "old_text": "port := 8080", "new_text": "port := 9000"}},
+      {"name": "edit_file", "arguments": {"path": "config.go", "old_text": "DefaultPort = 8080", "new_text": "DefaultPort = 9000"}},
+      {"name": "edit_file", "arguments": {"path": "README.md", "old_text": "Port: 8080", "new_text": "Port: 9000"}}
+    ]
+  }
+}
+
+Example 3 - Read-modify-write pattern:
+{
+  "name": "batch_tools",
+  "arguments": {
+    "calls": [
+      {"name": "read_file", "arguments": {"path": "version.txt"}},
+      {"name": "write_file", "arguments": {"path": "version.txt", "content": "v2.0.0"}},
+      {"name": "exec", "arguments": {"command": "git add version.txt"}}
+    ]
+  }
+}
+
+**When to use batch_tools**:
+- Reading 2+ files at once
+- Making multiple edits across files
+- Any sequence of independent operations
+- File operations + command execution
+
+**When NOT to use batch_tools**:
+- Single operation only
+- When you need to see results before deciding next step
+- Operations that depend on previous results
 
 ## Safety
 
