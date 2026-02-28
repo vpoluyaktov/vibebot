@@ -56,8 +56,6 @@ func (a *Agent) SetProgressCallback(callback ProgressCallback) {
 
 // ProcessMessage handles an incoming message and generates a response
 func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string) (string, error) {
-	logger.Debug("Processing message from chat %d: %s", chatID, message)
-
 	// Add chat_id to context for tools
 	ctx = context.WithValue(ctx, "chat_id", chatID)
 
@@ -206,12 +204,24 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 
 		// Execute each tool call
 		for _, toolCall := range response.ToolCalls {
-			logger.Debug("Executing tool: %s", toolCall.Function.Name)
+			// Log tool call with arguments (truncate if too long)
+			args := toolCall.Function.Arguments
+			if len(args) > 200 {
+				args = args[:200] + "..."
+			}
+			logger.Debug("Executing tool: %s with args: %s", toolCall.Function.Name, args)
 
 			result, err := a.tools.Execute(ctx, toolCall.Function.Name, toolCall.Function.Arguments)
 			if err != nil {
 				result = fmt.Sprintf("Error: %v", err)
-				logger.Error("Tool execution error: %v", err)
+				logger.Error("Tool execution error for %s: %v", toolCall.Function.Name, err)
+			} else {
+				// Log successful execution with result summary
+				resultSummary := result
+				if len(result) > 150 {
+					resultSummary = result[:150] + "..."
+				}
+				logger.Debug("Tool %s completed successfully: %s", toolCall.Function.Name, resultSummary)
 			}
 
 			// Add tool result as a message
