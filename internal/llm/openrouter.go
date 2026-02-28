@@ -11,7 +11,10 @@ import (
 	"time"
 )
 
-const openRouterURL = "https://openrouter.ai/api/v1/chat/completions"
+const (
+	openRouterURL       = "https://openrouter.ai/api/v1/chat/completions"
+	openRouterModelsURL = "https://openrouter.ai/api/v1/models"
+)
 
 // OpenRouter implements the Provider interface for OpenRouter
 type OpenRouter struct {
@@ -171,4 +174,57 @@ func (o *OpenRouter) Chat(ctx context.Context, messages []Message, tools []Tool)
 			TotalTokens:      orResp.Usage.TotalTokens,
 		},
 	}, nil
+}
+
+// ModelInfo represents model metadata from OpenRouter
+type ModelInfo struct {
+	ID            string `json:"id"`
+	ContextLength int    `json:"context_length"`
+}
+
+// modelsResponse matches OpenRouter's /models API response
+type modelsResponse struct {
+	Data []ModelInfo `json:"data"`
+}
+
+// FetchModelContextLengths fetches context lengths for given model IDs
+func (o *OpenRouter) FetchModelContextLengths(ctx context.Context, modelIDs []string) (map[string]int, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", openRouterModelsURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+o.apiKey)
+
+	resp, err := o.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch models: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var modelsResp modelsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&modelsResp); err != nil {
+		return nil, fmt.Errorf("failed to parse models response: %w", err)
+	}
+
+	// Build a map of requested models
+	requested := make(map[string]bool)
+	for _, id := range modelIDs {
+		requested[id] = true
+	}
+
+	// Extract context lengths for requested models
+	contextLengths := make(map[string]int)
+	for _, model := range modelsResp.Data {
+		if requested[model.ID] {
+			contextLengths[model.ID] = model.ContextLength
+		}
+	}
+
+	return contextLengths, nil
 }

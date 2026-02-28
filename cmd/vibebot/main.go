@@ -82,6 +82,16 @@ func runGateway() {
 	provider := llm.NewOpenRouter(cfg.OpenRouterAPIKey, modelMgr.GetCurrent())
 	logger.Info("Current model: %s", modelMgr.GetCurrent())
 
+	// Fetch context lengths for all allowed models
+	ctx := context.Background()
+	contextLengths, err := provider.FetchModelContextLengths(ctx, cfg.OpenRouterAllowedModels)
+	if err != nil {
+		logger.Warn("Failed to fetch model context lengths: %v (stats will not show context percentage)", err)
+	} else {
+		modelMgr.SetContextLengths(contextLengths)
+		logger.Debug("Fetched context lengths for %d models", len(contextLengths))
+	}
+
 	// Initialize tool registry
 	toolRegistry := tools.NewRegistry()
 	tools.RegisterFileTools(toolRegistry, cfg.WorkspaceDir)
