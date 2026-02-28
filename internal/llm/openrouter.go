@@ -165,5 +165,10 @@ func (o *OpenRouter) Chat(ctx context.Context, messages []Message, tools []Tool)
 		Content:      choice.Message.Content,
 		ToolCalls:    choice.Message.ToolCalls,
 		FinishReason: choice.FinishReason,
+		Usage: TokenUsage{
+			PromptTokens:     orResp.Usage.PromptTokens,
+			CompletionTokens: orResp.Usage.CompletionTokens,
+			TotalTokens:      orResp.Usage.TotalTokens,
+		},
 	}, nil
 }

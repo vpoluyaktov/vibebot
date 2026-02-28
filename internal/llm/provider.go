@@ -20,11 +20,19 @@ type ToolCall struct {
 	} `json:"function"`
 }
 
+// TokenUsage represents token consumption stats
+type TokenUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+}
+
 // Response represents an LLM response
 type Response struct {
-	Content   string     `json:"content"`
-	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
-	FinishReason string  `json:"finish_reason"` // "stop", "tool_calls", etc.
+	Content      string     `json:"content"`
+	ToolCalls    []ToolCall `json:"tool_calls,omitempty"`
+	FinishReason string     `json:"finish_reason"` // "stop", "tool_calls", etc.
+	Usage        TokenUsage `json:"usage"`
 }
 
 // Provider defines the interface for LLM providers
