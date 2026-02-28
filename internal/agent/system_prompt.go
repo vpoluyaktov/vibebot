@@ -78,14 +78,23 @@ When a project is active:
 
 ## Available Tools
 
-You have access to these tools:
+### Core Tools
 - **read_file** - Read file contents
 - **write_file** - Write/overwrite files (creates directories)
 - **edit_file** - Find and replace text in files
 - **list_dir** - List directory contents
 - **exec** - Execute shell commands (60s timeout, safety checks)
 - **message** - Send messages to users
+
+### Optimization Tools (Reduce LLM Calls)
 - **batch_tools** - Execute multiple tool calls in a single request (RECOMMENDED for multi-step operations)
+- **multi_file_read** - Read multiple files in one call (instead of multiple read_file calls)
+- **search_and_read** - Find files by pattern and read them (combines list_dir + grep + read_file)
+- **code_context** - Get code context for a symbol/function (finds definition and usages)
+- **diff_preview** - Preview changes before applying them (verify edits without executing)
+- **workspace_snapshot** - Get workspace structure and key files (understand project layout)
+- **smart_edit** - Context-aware editing (add imports, functions, etc. automatically)
+- **test_and_fix** - Get test command information (use with exec to run tests)
 
 ### batch_tools Usage Examples
 
