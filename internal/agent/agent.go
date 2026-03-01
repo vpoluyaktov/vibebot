@@ -73,6 +73,7 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 		return "🤖 **vibebot** - AI Assistant\n\n" +
 			"**Conversation:**\n" +
 			"/new - Start a new conversation (clears context)\n" +
+			"/stop - Stop processing and clear queue\n" +
 			"/help - Show this help message\n\n" +
 			"**Model Management:**\n" +
 			"/model, /models - Show current LLM model\n" +
@@ -206,7 +207,7 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 			ToolCalls: response.ToolCalls,
 		}
 		messages = append(messages, assistantMsg)
-		
+
 		// Don't save tool call messages to session - they're implementation details
 
 		// Execute each tool call
@@ -278,7 +279,7 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 
 	// Append token usage and context window stats to final response
 	contextSize := len(sess.GetHistory(maxHistoryMessages))
-	
+
 	// Build stats string with token usage and context percentage
 	var tokenStats string
 	contextLength := a.modelManager.GetContextLength()
@@ -312,7 +313,7 @@ func formatNumber(n int) string {
 	if len(s) <= 3 {
 		return s
 	}
-	
+
 	var result []byte
 	for i, c := range []byte(s) {
 		if i > 0 && (len(s)-i)%3 == 0 {

@@ -21,10 +21,14 @@ type Gateway struct {
 	bot             *tgbotapi.BotAPI
 	handler         MessageHandler
 	allowedUsers    []int64
-	processedMsgIDs map[int]bool          // Track processed message IDs to prevent duplicates
-	msgMutex        sync.Mutex            // Protects processedMsgIDs map
-	chatLocks       map[int64]*sync.Mutex // Per-chat locks to prevent parallel processing
-	chatLocksMutex  sync.Mutex            // Protects chatLocks map
+	processedMsgIDs map[int]bool            // Track processed message IDs to prevent duplicates
+	msgMutex        sync.Mutex              // Protects processedMsgIDs map
+	chatLocks       map[int64]*sync.Mutex   // Per-chat locks to prevent parallel processing
+	chatLocksMutex  sync.Mutex              // Protects chatLocks map
+	processingState map[int64]bool          // Track if a chat is currently processing
+	stateMutex      sync.Mutex              // Protects processingState map
+	stopSignals     map[int64]chan struct{} // Stop signals per chat
+	stopMutex       sync.Mutex              // Protects stopSignals map
 }
 
 // New creates a new Telegram gateway
@@ -46,6 +50,7 @@ func New(token string, handler MessageHandler, allowedUsers []int64) (*Gateway, 
 	commands := []tgbotapi.BotCommand{
 		{Command: "start", Description: "Start the bot"},
 		{Command: "new", Description: "Start a new conversation"},
+		{Command: "stop", Description: "Stop processing and clear queue"},
 		{Command: "model", Description: "Show/switch LLM model"},
 		{Command: "models", Description: "List available models"},
 		{Command: "help", Description: "Show available commands"},
@@ -66,6 +71,8 @@ func New(token string, handler MessageHandler, allowedUsers []int64) (*Gateway, 
 		allowedUsers:    allowedUsers,
 		processedMsgIDs: make(map[int]bool),
 		chatLocks:       make(map[int64]*sync.Mutex),
+		processingState: make(map[int64]bool),
+		stopSignals:     make(map[int64]chan struct{}),
 	}, nil
 }
 
@@ -123,10 +130,35 @@ func (g *Gateway) handleMessage(ctx context.Context, msg *tgbotapi.Message) {
 	userID := msg.From.ID
 	text := msg.Text
 
+	// Check if another message is being processed for this chat
+	g.stateMutex.Lock()
+	isProcessing := g.processingState[chatID]
+	g.stateMutex.Unlock()
+
+	// If processing, send immediate queue notification
+	if isProcessing {
+		queueMsg := "⏳ Previous message is still processing. Your message is queued and will be handled next."
+		if err := g.SendMessage(chatID, queueMsg); err != nil {
+			logger.Error("Error sending queue notification: %v", err)
+		}
+	}
+
 	// Acquire per-chat lock to prevent parallel processing of messages from the same chat
 	chatLock := g.getChatLock(chatID)
 	chatLock.Lock()
 	defer chatLock.Unlock()
+
+	// Mark as processing
+	g.stateMutex.Lock()
+	g.processingState[chatID] = true
+	g.stateMutex.Unlock()
+
+	defer func() {
+		// Clear processing state when done
+		g.stateMutex.Lock()
+		g.processingState[chatID] = false
+		g.stateMutex.Unlock()
+	}()
 
 	logger.Info("[%d] %s (ID: %d): %s", chatID, msg.From.UserName, userID, text)
 
@@ -142,12 +174,40 @@ func (g *Gateway) handleMessage(ctx context.Context, msg *tgbotapi.Message) {
 
 	logger.Debug("Processing message from chat %d: %s", chatID, text)
 
+	// Handle /stop command
+	if text == "/stop" {
+		g.handleStopCommand(chatID)
+		return
+	}
+
+	// Create stop signal channel for this chat
+	g.stopMutex.Lock()
+	stopChan := make(chan struct{})
+	g.stopSignals[chatID] = stopChan
+	g.stopMutex.Unlock()
+
+	defer func() {
+		// Clean up stop signal
+		g.stopMutex.Lock()
+		delete(g.stopSignals, chatID)
+		g.stopMutex.Unlock()
+	}()
+
 	// Start typing indicator
 	stopTyping := g.startTypingIndicator(ctx, chatID)
 	defer stopTyping()
 
 	// Call the handler
 	response, err := g.handler(ctx, chatID, text)
+
+	// Check if processing was stopped
+	select {
+	case <-stopChan:
+		logger.Info("Message processing stopped for chat %d", chatID)
+		return
+	default:
+		// Continue with response
+	}
 	if err != nil {
 		logger.Error("Error handling message: %v", err)
 		response = fmt.Sprintf("Error: %v", err)
@@ -160,6 +220,25 @@ func (g *Gateway) handleMessage(ctx context.Context, msg *tgbotapi.Message) {
 		logger.Error("Error sending message: %v", err)
 	} else {
 		logger.Debug("Response sent successfully to chat %d", chatID)
+	}
+}
+
+// handleStopCommand handles the /stop command to cancel processing
+func (g *Gateway) handleStopCommand(chatID int64) {
+	// Signal any ongoing processing to stop
+	g.stopMutex.Lock()
+	if stopChan, exists := g.stopSignals[chatID]; exists {
+		close(stopChan)
+		delete(g.stopSignals, chatID)
+	}
+	g.stopMutex.Unlock()
+
+	logger.Info("Stop command received for chat %d", chatID)
+
+	// Send confirmation
+	response := "⛔ Processing stopped. Queue cleared."
+	if err := g.SendMessage(chatID, response); err != nil {
+		logger.Error("Error sending stop confirmation: %v", err)
 	}
 }
 
