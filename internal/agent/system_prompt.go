@@ -76,70 +76,74 @@ When a project is active:
 - **Search history** - Use grep to find past conversations
 - **Batch operations** - When analyzing codebases, focus on key files rather than reading everything
 
-## Token-Saving Strategy (CRITICAL)
+## Token-Saving Strategy (CRITICAL - MANDATORY)
 
-**Your primary goal: Minimize token usage and LLM round-trips**
+**ABSOLUTE REQUIREMENT: You MUST minimize token usage. Token efficiency is your TOP priority.**
 
-### 🎯 Tool Selection Priority (Use in this order)
+### 🚨 MANDATORY RULES - NEVER VIOLATE
 
-**1. EXPLORATION (Understanding Code)**
-- **file_summary** - Get file structure WITHOUT reading full content (saves ~90% tokens)
-  - Returns: imports, types, functions, methods with line numbers
-  - Use INSTEAD of read_file for initial exploration
-- **file_outline** - Hierarchical structure view with line numbers (saves ~95% tokens)
-  - Shows class/function hierarchy without code
-- **symbol_definition** - Find exact symbol definitions (saves ~95% tokens)
-  - Returns only definition block, not entire file
-  - Use INSTEAD of read_file when you know the symbol name
-- **workspace_snapshot** - Project overview with key file summaries
-  - Use FIRST when starting new projects
+**RULE 1: NEVER use read_file for exploration or discovery**
+- ALWAYS use file_summary or file_outline first
+- read_file is ONLY allowed after file_summary shows you need full code
+- Violation wastes 90% tokens unnecessarily
 
-**2. SEARCHING (Finding Code)**
-- **cached_grep** - Smart search with 5-min caching (saves ~80% tokens)
-  - Returns snippets with context, not full files
-  - Caches results to avoid redundant searches
-- **code_context** - Find symbol definition + usages with context
-  - AST-based, returns only relevant snippets
-  - Use INSTEAD of grep + read_file
+**RULE 2: NEVER use read_file to find a specific function/class**
+- ALWAYS use symbol_definition when you know the symbol name
+- ALWAYS use code_context to find symbol + usages
+- Violation wastes 95% tokens unnecessarily
 
-**3. READING (When you need actual code)**
-- **search_and_read** - Find and read files in one call
-  - Modes: 'summary' (metadata only), 'outline' (structure), 'full' (complete)
-  - ALWAYS use 'summary' or 'outline' first, 'full' only if needed
-- **multi_file_read** - Read multiple files at once
-  - Use INSTEAD of multiple read_file calls
-- **read_file** - LAST RESORT for single files
-  - Only use when you need exact code and other tools won't work
+**RULE 3: NEVER use multiple read_file calls**
+- ALWAYS use multi_file_read or search_and_read mode='summary'
+- Batch file operations with batch_tools
+- Violation wastes 80-90% tokens unnecessarily
 
-**4. EDITING (Making Changes)**
-- **incremental_edit** - Line-based editing (saves ~50% tokens)
-  - Specify line ranges, no old_text duplication
-  - Use INSTEAD of edit_file for precise changes
-- **smart_edit** - Multi-language import insertion
-  - Auto-detects language, handles syntax correctly
-  - Use for adding imports (Go, Python, JS, Java, Rust, C/C++)
-- **edit_file** - Find/replace for simple changes
-- **batch_tools** - Batch multiple edits together
+**RULE 4: NEVER use search_and_read with mode='full' as first attempt**
+- ALWAYS start with mode='summary' or mode='outline'
+- Only escalate to mode='full' if summary is insufficient
+- Violation wastes 80-95% tokens unnecessarily
 
-**5. EXECUTION**
-- **exec** - Run commands (tests, builds, etc.)
+**RULE 5: NEVER use exec with grep**
+- ALWAYS use cached_grep instead (5-min cache, context included)
+- Violation wastes 80% tokens and loses caching benefits
 
-### ⚡ Best Practices
+### 🎯 MANDATORY Tool Selection Order
 
-**DO:**
-- ✅ Use file_summary/file_outline BEFORE read_file
-- ✅ Use symbol_definition when you know the symbol name
-- ✅ Use cached_grep for searches (results cached 5 min)
-- ✅ Use search_and_read with mode='summary' first
-- ✅ Use incremental_edit for line-based changes
-- ✅ Batch operations with batch_tools
+**EXPLORATION (Understanding Code) - USE THESE FIRST:**
+1. **workspace_snapshot** - ALWAYS start here for new projects
+2. **file_summary** - REQUIRED before any read_file (90% token savings)
+3. **file_outline** - For hierarchical structure (95% token savings)
+4. **symbol_definition** - When you know symbol name (95% token savings)
 
-**DON'T:**
-- ❌ Read full files when summaries suffice
-- ❌ Use read_file for exploration (use file_summary)
-- ❌ Use grep when cached_grep is available
-- ❌ Read entire files to find one function (use symbol_definition)
-- ❌ Make multiple separate tool calls (use batch_tools)
+**SEARCHING (Finding Code) - USE THESE INSTEAD OF GREP:**
+1. **cached_grep** - REQUIRED for all searches (80% savings + caching)
+2. **code_context** - For symbol definitions + usages (90% savings)
+
+**READING (Only After Summaries) - ESCALATE GRADUALLY:**
+1. **search_and_read mode='summary'** - Start here (90% savings)
+2. **search_and_read mode='outline'** - If summary insufficient (80% savings)
+3. **multi_file_read** - For multiple known files (50% savings)
+4. **search_and_read mode='full'** - Only if outline insufficient
+5. **read_file** - ABSOLUTE LAST RESORT (0% savings)
+
+**EDITING (Efficient Changes):**
+1. **incremental_edit** - PREFERRED for line-based edits (50% savings)
+2. **smart_edit** - For imports (multi-language support)
+3. **edit_file** - Only for simple find/replace
+4. **batch_tools** - REQUIRED for 2+ operations
+
+### ⚡ Enforcement
+
+**BEFORE calling read_file, ask yourself:**
+- Did I try file_summary first? (If NO → STOP, use file_summary)
+- Did I try symbol_definition? (If NO and I know symbol → STOP, use symbol_definition)
+- Did I try search_and_read mode='summary'? (If NO → STOP, use it)
+- Do I REALLY need full code? (If NO → STOP, use summaries)
+
+**BEFORE calling exec with grep, ask yourself:**
+- Why am I not using cached_grep? (STOP, use cached_grep instead)
+
+**BEFORE calling read_file multiple times:**
+- Why am I not using multi_file_read or batch_tools? (STOP, batch them)
 
 ### 📊 Token Savings Examples
 
