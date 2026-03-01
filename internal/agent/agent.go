@@ -74,11 +74,22 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 	// Handle commands
 	if message == "/new" {
 		sess := a.sessions.GetOrCreate(chatID)
+
+		// Trigger consolidation in background before clearing
+		if len(sess.Messages) > 0 {
+			sessionKey := fmt.Sprintf("telegram:%d", chatID)
+			messages := make([]llm.Message, len(sess.Messages))
+			copy(messages, sess.Messages)
+			projectName := sess.GetProject()
+			logger.Info("Triggering consolidation before /new (chat %d, %d messages)", chatID, len(messages))
+			go a.consolidateSession(sessionKey, messages, projectName)
+		}
+
 		sess.Clear()
 		if err := a.sessions.Save(sess); err != nil {
 			logger.Warn("Failed to save cleared session: %v", err)
 		}
-		return "🔄 New conversation started. Previous context cleared.", nil
+		return " New conversation started. Previous context cleared.", nil
 	}
 
 	if message == "/help" {
@@ -295,8 +306,11 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 	// Check if consolidation is needed (run in background)
 	if sess.NeedsConsolidation(consolidationThreshold) {
 		sessionKey := fmt.Sprintf("telegram:%d", chatID)
-		logger.Info("Session %s needs consolidation (%d messages)", sessionKey, len(sess.Messages))
-		go a.consolidateSession(sessionKey)
+		messages := make([]llm.Message, len(sess.Messages))
+		copy(messages, sess.Messages)
+		projectName := sess.GetProject()
+		logger.Info("Session %s needs consolidation (%d messages)", sessionKey, len(messages))
+		go a.consolidateSession(sessionKey, messages, projectName)
 	}
 
 	// Append verbose tool usage if enabled
@@ -365,17 +379,10 @@ func formatNumber(n int) string {
 }
 
 // consolidateSession performs background consolidation of old messages
-func (a *Agent) consolidateSession(sessionKey string) {
+// Messages and project name are passed directly to avoid race conditions with session clearing
+func (a *Agent) consolidateSession(sessionKey string, messages []llm.Message, projectName string) {
 	ctx := context.Background()
 
-	sess, err := a.sessions.GetSession(sessionKey)
-	if err != nil {
-		logger.Error("Failed to get session for consolidation: %v", err)
-		return
-	}
-
-	// Get messages to consolidate
-	messages := sess.GetMessagesForConsolidation(consolidationBatchSize)
 	if len(messages) == 0 {
 		logger.Debug("No messages to consolidate for session %s", sessionKey)
 		return
@@ -384,7 +391,7 @@ func (a *Agent) consolidateSession(sessionKey string) {
 	logger.Info("Consolidating %d messages for session %s", len(messages), sessionKey)
 
 	// Run consolidation
-	result, err := a.consolidator.ConsolidateMessages(ctx, messages, sess.GetProject())
+	result, err := a.consolidator.ConsolidateMessages(ctx, messages, projectName)
 	if err != nil {
 		logger.Error("Consolidation failed for session %s: %v", sessionKey, err)
 		return
@@ -398,32 +405,46 @@ func (a *Agent) consolidateSession(sessionKey string) {
 		}
 	}
 
-	if sess.GetProject() != "" && len(result.ProjectFacts) > 0 {
-		logger.Info("Appending %d project facts to project '%s'", len(result.ProjectFacts), sess.GetProject())
-		if err := a.memory.AppendProjectFacts(sess.GetProject(), result.ProjectFacts); err != nil {
-			logger.Error("Failed to append project facts: %v", err)
+	if projectName != "" {
+		// Update project template fields if consolidation extracted structured info
+		if result.ProjectDescription != "" || result.ProjectStatus != "" || result.ProjectFocus != "" {
+			logger.Info("Updating project '%s' template fields", projectName)
+			if err := a.memory.UpdateProjectFields(projectName, result.ProjectDescription, result.ProjectStatus, result.ProjectFocus); err != nil {
+				logger.Error("Failed to update project fields: %v", err)
+			}
+		}
+
+		// Append project facts
+		if len(result.ProjectFacts) > 0 {
+			logger.Info("Appending %d project facts to project '%s'", len(result.ProjectFacts), projectName)
+			if err := a.memory.AppendProjectFacts(projectName, result.ProjectFacts); err != nil {
+				logger.Error("Failed to append project facts: %v", err)
+			}
 		}
 	}
 
 	// Append summary to HISTORY.md
-	if err := a.memory.AppendConsolidationSummary(result.Summary, sess.GetProject()); err != nil {
+	if err := a.memory.AppendConsolidationSummary(result.Summary, projectName); err != nil {
 		logger.Error("Failed to append consolidation summary: %v", err)
 	}
 
-	// Mark messages as consolidated
-	sess.MarkConsolidated(len(messages))
+	// Mark messages as consolidated in session
+	sess, err := a.sessions.GetSession(sessionKey)
+	if err == nil {
+		sess.MarkConsolidated(len(messages))
 
-	// Optional: Prune consolidated messages to save space
-	// Disabled for now - keeping full history
-	// sess.PruneConsolidated()
+		// Optional: Prune consolidated messages to save space
+		// Disabled for now - keeping full history
+		// sess.PruneConsolidated()
 
-	// Save updated session
-	if err := a.sessions.SaveSession(sess); err != nil {
-		logger.Error("Failed to save session after consolidation: %v", err)
-		return
+		// Save updated session
+		if err := a.sessions.SaveSession(sess); err != nil {
+			logger.Error("Failed to save session after consolidation: %v", err)
+			return
+		}
+
+		logger.Info("Consolidation complete for session %s (LastConsolidated: %d)", sessionKey, sess.LastConsolidated)
 	}
-
-	logger.Info("Consolidation complete for session %s (LastConsolidated: %d)", sessionKey, sess.LastConsolidated)
 }
 
 // handleModelCommand processes /model commands
@@ -573,10 +594,23 @@ func (a *Agent) handleProjectCommand(chatID int64, message string) (string, erro
 			return fmt.Sprintf("❌ Project `%s` already exists!", projectName), nil
 		}
 
+		// Trigger consolidation in background before switching projects
+		if len(sess.Messages) > 0 {
+			sessionKey := fmt.Sprintf("telegram:%d", chatID)
+			messages := make([]llm.Message, len(sess.Messages))
+			copy(messages, sess.Messages)
+			projectName := sess.GetProject()
+			logger.Info("Triggering consolidation before creating project (chat %d, %d messages)", chatID, len(messages))
+			go a.consolidateSession(sessionKey, messages, projectName)
+		}
+
 		// Create project using memory manager
 		if err := a.memory.CreateProject(projectName); err != nil {
 			return fmt.Sprintf("❌ Error creating project: %v", err), nil
 		}
+
+		// Clear session context to start fresh with new project
+		sess.Clear()
 
 		// Automatically switch to the new project
 		sess.SetProject(projectName)
@@ -640,11 +674,24 @@ func (a *Agent) handleProjectCommand(chatID int64, message string) (string, erro
 		return fmt.Sprintf("❌ Project `%s` does not exist!\n\nUse `/projects` to see available projects or `/project create %s` to create it.", projectName, projectName), nil
 	}
 
+	// Trigger consolidation in background before switching projects
+	if len(sess.Messages) > 0 {
+		sessionKey := fmt.Sprintf("telegram:%d", chatID)
+		messages := make([]llm.Message, len(sess.Messages))
+		copy(messages, sess.Messages)
+		currentProject := sess.GetProject()
+		logger.Info("Triggering consolidation before switching to project '%s' (chat %d, %d messages)", projectName, chatID, len(messages))
+		go a.consolidateSession(sessionKey, messages, currentProject)
+	}
+
 	// Load project memory to verify it's readable
 	projectMemory, err := a.memory.LoadProjectMemory(projectName)
 	if err != nil {
 		return fmt.Sprintf("❌ Error loading project: %v", err), nil
 	}
+
+	// Clear session context to avoid mixing contexts between projects
+	sess.Clear()
 
 	// Switch to project
 	sess.SetProject(projectName)
@@ -704,11 +751,11 @@ func (a *Agent) showProjectList(chatID int64) (string, error) {
 			CallbackData: "project:create",
 		}})
 
-		// Add "Clear" button if there's a current project
+		// Add "Delete Current Project" button if there's a current project
 		if currentProject != "" {
 			keyboard = append(keyboard, []telegram.InlineButton{{
-				Text:         "🔄 Clear Current Project",
-				CallbackData: "project:clear",
+				Text:         "❌ Delete Current Project",
+				CallbackData: "project:delete",
 			}})
 		}
 
@@ -968,20 +1015,54 @@ func (a *Agent) handleProjectCallback(chatID int64, value string) (string, error
 			"_Project names must be alphanumeric with optional hyphens/underscores._", nil
 	}
 
-	// Handle "clear" command
-	if value == "clear" {
+	// Handle "delete" command - delete current project and switch to another
+	if value == "delete" {
 		currentProject := sess.GetProject()
 		if currentProject == "" {
-			return "ℹ️ No active project. Already using global context only.", nil
+			return "ℹ️ No active project to delete.", nil
 		}
 
-		sess.ClearProject()
-		if err := a.sessions.Save(sess); err != nil {
-			logger.Warn("Failed to save session after clearing project: %v", err)
+		// Trigger consolidation in background before deleting
+		if len(sess.Messages) > 0 {
+			sessionKey := fmt.Sprintf("telegram:%d", chatID)
+			messages := make([]llm.Message, len(sess.Messages))
+			copy(messages, sess.Messages)
+			logger.Info("Triggering consolidation before deleting project '%s' (chat %d, %d messages) via callback", currentProject, chatID, len(messages))
+			go a.consolidateSession(sessionKey, messages, currentProject)
 		}
 
-		logger.Info("Cleared project context for chat %d (was: %s) via callback", chatID, currentProject)
-		return fmt.Sprintf("✅ Cleared project `%s`\n\nNow using global context only.", currentProject), nil
+		// Clear session context
+		sess.Clear()
+
+		// Delete the project
+		if err := a.memory.DeleteProject(currentProject); err != nil {
+			return fmt.Sprintf("❌ Error deleting project: %v", err), nil
+		}
+
+		// Get remaining projects
+		projects, err := a.memory.ListProjects()
+		if err != nil {
+			logger.Warn("Failed to list projects after deletion: %v", err)
+			projects = []string{}
+		}
+
+		// Auto-switch to first available project or clear to global context
+		if len(projects) > 0 {
+			newProject := projects[0]
+			sess.SetProject(newProject)
+			if err := a.sessions.Save(sess); err != nil {
+				logger.Warn("Failed to save session after auto-switching project: %v", err)
+			}
+			logger.Info("Deleted project '%s' and switched to '%s' (chat %d) via callback", currentProject, newProject, chatID)
+			return fmt.Sprintf("✅ Project `%s` deleted!\n\nSwitched to project `%s`.", currentProject, newProject), nil
+		} else {
+			sess.ClearProject()
+			if err := a.sessions.Save(sess); err != nil {
+				logger.Warn("Failed to save session after clearing project: %v", err)
+			}
+			logger.Info("Deleted project '%s' and switched to global context (chat %d) via callback", currentProject, chatID)
+			return fmt.Sprintf("✅ Project `%s` deleted!\n\nNo other projects available. Using global context.", currentProject), nil
+		}
 	}
 
 	// Handle project switch
@@ -997,11 +1078,24 @@ func (a *Agent) handleProjectCallback(chatID int64, value string) (string, error
 		return fmt.Sprintf("❌ Project `%s` does not exist!", projectName), nil
 	}
 
+	// Trigger consolidation in background before switching projects
+	if len(sess.Messages) > 0 {
+		sessionKey := fmt.Sprintf("telegram:%d", chatID)
+		messages := make([]llm.Message, len(sess.Messages))
+		copy(messages, sess.Messages)
+		currentProject := sess.GetProject()
+		logger.Info("Triggering consolidation before switching to project '%s' (chat %d, %d messages) via callback", projectName, chatID, len(messages))
+		go a.consolidateSession(sessionKey, messages, currentProject)
+	}
+
 	// Load project memory to verify it's readable
 	projectMemory, err := a.memory.LoadProjectMemory(projectName)
 	if err != nil {
 		return fmt.Sprintf("❌ Error loading project: %v", err), nil
 	}
+
+	// Clear session context to avoid mixing contexts between projects
+	sess.Clear()
 
 	// Switch to project
 	sess.SetProject(projectName)
