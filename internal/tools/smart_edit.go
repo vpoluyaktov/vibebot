@@ -9,6 +9,7 @@ import (
 
 	"github.com/vpoluyaktov/vibebot/internal/llm"
 	"github.com/vpoluyaktov/vibebot/internal/logger"
+	"github.com/vpoluyaktov/vibebot/internal/tools/parser"
 )
 
 func RegisterSmartEdit(registry *Registry, workspaceDir string) {
@@ -17,7 +18,7 @@ func RegisterSmartEdit(registry *Registry, workspaceDir string) {
 			Type: "function",
 			Function: llm.Function{
 				Name:        "smart_edit",
-				Description: "Context-aware editing for common patterns like adding imports, functions, etc. Handles the read-edit-verify cycle automatically.",
+				Description: "Context-aware editing for common patterns like adding imports, functions, etc. Automatically detects language and handles syntax correctly. Supports Go, Python, JavaScript, TypeScript, Java, C, C++, Rust.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -62,9 +63,17 @@ func RegisterSmartEdit(registry *Registry, workspaceDir string) {
 			content := string(data)
 			var newContent string
 
+			// Detect language
+			lang, _ := parser.GetLanguageByExtension(filepath.Ext(path))
+
 			switch operation {
 			case "add_import":
-				newContent = addImport(content, value)
+				if lang != nil {
+					newContent = addImportMultiLang(content, value, lang.Name)
+				} else {
+					// Fallback to old behavior for unsupported languages
+					newContent = addImportGo(content, value)
+				}
 			case "add_function":
 				newContent = content + "\n" + value + "\n"
 			case "append_content":
@@ -78,14 +87,43 @@ func RegisterSmartEdit(registry *Registry, workspaceDir string) {
 				return "", fmt.Errorf("failed to write file: %w", err)
 			}
 
-			logger.Debug("smart_edit: performed %s on %s", operation, path)
-			return fmt.Sprintf("Successfully performed %s on %s\nFile size: %d → %d bytes", operation, path, len(content), len(newContent)), nil
+			langName := "unknown"
+			if lang != nil {
+				langName = lang.Name
+			}
+
+			logger.Debug("smart_edit: performed %s on %s (%s)", operation, path, langName)
+			return fmt.Sprintf("Successfully performed %s on %s (%s)\nFile size: %d → %d bytes", 
+				operation, filepath.Base(path), langName, len(content), len(newContent)), nil
 		},
 	})
 }
 
-func addImport(content, importPath string) string {
-	// Simple implementation for Go imports
+func addImportMultiLang(content, importValue, language string) string {
+	switch language {
+	case "go":
+		return addImportGo(content, importValue)
+	case "python":
+		return addImportPython(content, importValue)
+	case "javascript", "typescript":
+		return addImportJavaScript(content, importValue)
+	case "java":
+		return addImportJava(content, importValue)
+	case "rust":
+		return addImportRust(content, importValue)
+	case "c", "cpp":
+		return addImportC(content, importValue)
+	default:
+		return content
+	}
+}
+
+func addImportGo(content, importPath string) string {
+	// Check if import already exists
+	if strings.Contains(content, fmt.Sprintf("\"%s\"", importPath)) {
+		return content
+	}
+
 	if strings.Contains(content, "import (") {
 		// Add to existing import block
 		importBlock := "import ("
@@ -103,4 +141,168 @@ func addImport(content, importPath string) string {
 		return strings.Join(lines, "\n")
 	}
 	return content
+}
+
+func addImportPython(content, importValue string) string {
+	// Check if import already exists
+	if strings.Contains(content, importValue) {
+		return content
+	}
+
+	lines := strings.Split(content, "\n")
+	
+	// Find the position after existing imports or at the top
+	insertPos := 0
+	lastImportPos := -1
+	
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "import ") || strings.HasPrefix(trimmed, "from ") {
+			lastImportPos = i
+		} else if trimmed != "" && !strings.HasPrefix(trimmed, "#") && lastImportPos >= 0 {
+			// Found first non-import, non-comment line after imports
+			insertPos = lastImportPos + 1
+			break
+		}
+	}
+
+	if lastImportPos >= 0 {
+		insertPos = lastImportPos + 1
+	}
+
+	// Insert the import
+	newLines := append(lines[:insertPos], append([]string{importValue}, lines[insertPos:]...)...)
+	return strings.Join(newLines, "\n")
+}
+
+func addImportJavaScript(content, importValue string) string {
+	// Check if import already exists
+	if strings.Contains(content, importValue) {
+		return content
+	}
+
+	lines := strings.Split(content, "\n")
+	
+	// Find position after existing imports
+	insertPos := 0
+	lastImportPos := -1
+	
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "import ") || strings.HasPrefix(trimmed, "const ") && strings.Contains(trimmed, "require(") {
+			lastImportPos = i
+		} else if trimmed != "" && !strings.HasPrefix(trimmed, "//") && lastImportPos >= 0 {
+			insertPos = lastImportPos + 1
+			break
+		}
+	}
+
+	if lastImportPos >= 0 {
+		insertPos = lastImportPos + 1
+	}
+
+	newLines := append(lines[:insertPos], append([]string{importValue}, lines[insertPos:]...)...)
+	return strings.Join(newLines, "\n")
+}
+
+func addImportJava(content, importValue string) string {
+	// Check if import already exists
+	if strings.Contains(content, importValue) {
+		return content
+	}
+
+	lines := strings.Split(content, "\n")
+	
+	// Find position after package declaration and existing imports
+	insertPos := 0
+	lastImportPos := -1
+	foundPackage := false
+	
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "package ") {
+			foundPackage = true
+			insertPos = i + 1
+		} else if strings.HasPrefix(trimmed, "import ") {
+			lastImportPos = i
+		} else if trimmed != "" && !strings.HasPrefix(trimmed, "//") && foundPackage {
+			if lastImportPos >= 0 {
+				insertPos = lastImportPos + 1
+			}
+			break
+		}
+	}
+
+	// Ensure import statement ends with semicolon
+	if !strings.HasSuffix(importValue, ";") {
+		importValue += ";"
+	}
+
+	newLines := append(lines[:insertPos], append([]string{importValue}, lines[insertPos:]...)...)
+	return strings.Join(newLines, "\n")
+}
+
+func addImportRust(content, importValue string) string {
+	// Check if use statement already exists
+	if strings.Contains(content, importValue) {
+		return content
+	}
+
+	lines := strings.Split(content, "\n")
+	
+	// Find position after existing use statements
+	insertPos := 0
+	lastUsePos := -1
+	
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "use ") {
+			lastUsePos = i
+		} else if trimmed != "" && !strings.HasPrefix(trimmed, "//") && lastUsePos >= 0 {
+			insertPos = lastUsePos + 1
+			break
+		}
+	}
+
+	if lastUsePos >= 0 {
+		insertPos = lastUsePos + 1
+	}
+
+	newLines := append(lines[:insertPos], append([]string{importValue}, lines[insertPos:]...)...)
+	return strings.Join(newLines, "\n")
+}
+
+func addImportC(content, importValue string) string {
+	// Check if include already exists
+	if strings.Contains(content, importValue) {
+		return content
+	}
+
+	lines := strings.Split(content, "\n")
+	
+	// Find position after existing includes
+	insertPos := 0
+	lastIncludePos := -1
+	
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "#include ") {
+			lastIncludePos = i
+		} else if trimmed != "" && !strings.HasPrefix(trimmed, "//") && !strings.HasPrefix(trimmed, "/*") && lastIncludePos >= 0 {
+			insertPos = lastIncludePos + 1
+			break
+		}
+	}
+
+	if lastIncludePos >= 0 {
+		insertPos = lastIncludePos + 1
+	}
+
+	// Ensure include has proper format
+	if !strings.HasPrefix(importValue, "#include") {
+		importValue = "#include " + importValue
+	}
+
+	newLines := append(lines[:insertPos], append([]string{importValue}, lines[insertPos:]...)...)
+	return strings.Join(newLines, "\n")
 }
