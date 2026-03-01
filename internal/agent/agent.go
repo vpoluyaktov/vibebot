@@ -740,11 +740,11 @@ func (a *Agent) showProjectList(chatID int64) (string, error) {
 			CallbackData: "project:create",
 		}})
 
-		// Add "Clear" button if there's a current project
+		// Add "Delete Current Project" button if there's a current project
 		if currentProject != "" {
 			keyboard = append(keyboard, []telegram.InlineButton{{
-				Text:         "🔄 Clear Current Project",
-				CallbackData: "project:clear",
+				Text:         "❌ Delete Current Project",
+				CallbackData: "project:delete",
 			}})
 		}
 
@@ -1004,20 +1004,54 @@ func (a *Agent) handleProjectCallback(chatID int64, value string) (string, error
 			"_Project names must be alphanumeric with optional hyphens/underscores._", nil
 	}
 
-	// Handle "clear" command
-	if value == "clear" {
+	// Handle "delete" command - delete current project and switch to another
+	if value == "delete" {
 		currentProject := sess.GetProject()
 		if currentProject == "" {
-			return "ℹ️ No active project. Already using global context only.", nil
+			return "ℹ️ No active project to delete.", nil
 		}
 
-		sess.ClearProject()
-		if err := a.sessions.Save(sess); err != nil {
-			logger.Warn("Failed to save session after clearing project: %v", err)
+		// Trigger consolidation in background before deleting
+		if len(sess.Messages) > 0 {
+			sessionKey := fmt.Sprintf("telegram:%d", chatID)
+			messages := make([]llm.Message, len(sess.Messages))
+			copy(messages, sess.Messages)
+			logger.Info("Triggering consolidation before deleting project '%s' (chat %d, %d messages) via callback", currentProject, chatID, len(messages))
+			go a.consolidateSession(sessionKey, messages, currentProject)
 		}
 
-		logger.Info("Cleared project context for chat %d (was: %s) via callback", chatID, currentProject)
-		return fmt.Sprintf("✅ Cleared project `%s`\n\nNow using global context only.", currentProject), nil
+		// Clear session context
+		sess.Clear()
+
+		// Delete the project
+		if err := a.memory.DeleteProject(currentProject); err != nil {
+			return fmt.Sprintf("❌ Error deleting project: %v", err), nil
+		}
+
+		// Get remaining projects
+		projects, err := a.memory.ListProjects()
+		if err != nil {
+			logger.Warn("Failed to list projects after deletion: %v", err)
+			projects = []string{}
+		}
+
+		// Auto-switch to first available project or clear to global context
+		if len(projects) > 0 {
+			newProject := projects[0]
+			sess.SetProject(newProject)
+			if err := a.sessions.Save(sess); err != nil {
+				logger.Warn("Failed to save session after auto-switching project: %v", err)
+			}
+			logger.Info("Deleted project '%s' and switched to '%s' (chat %d) via callback", currentProject, newProject, chatID)
+			return fmt.Sprintf("✅ Project `%s` deleted!\n\nSwitched to project `%s`.", currentProject, newProject), nil
+		} else {
+			sess.ClearProject()
+			if err := a.sessions.Save(sess); err != nil {
+				logger.Warn("Failed to save session after clearing project: %v", err)
+			}
+			logger.Info("Deleted project '%s' and switched to global context (chat %d) via callback", currentProject, chatID)
+			return fmt.Sprintf("✅ Project `%s` deleted!\n\nNo other projects available. Using global context.", currentProject), nil
+		}
 	}
 
 	// Handle project switch
