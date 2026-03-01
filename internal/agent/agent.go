@@ -593,6 +593,9 @@ func (a *Agent) handleProjectCommand(chatID int64, message string) (string, erro
 			return fmt.Sprintf("❌ Error creating project: %v", err), nil
 		}
 
+		// Clear session context to start fresh with new project
+		sess.Clear()
+
 		// Automatically switch to the new project
 		sess.SetProject(projectName)
 		if err := a.sessions.Save(sess); err != nil {
@@ -667,6 +670,9 @@ func (a *Agent) handleProjectCommand(chatID int64, message string) (string, erro
 	if err != nil {
 		return fmt.Sprintf("❌ Error loading project: %v", err), nil
 	}
+
+	// Clear session context to avoid mixing contexts between projects
+	sess.Clear()
 
 	// Switch to project
 	sess.SetProject(projectName)
