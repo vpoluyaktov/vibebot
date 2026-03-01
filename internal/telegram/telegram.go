@@ -352,42 +352,46 @@ func markdownToTelegramHTML(text string) string {
 		return m
 	})
 
-	// 3. Headers # Title -> just the title text
+	// 3. Extract and convert markdown tables to HTML
+	var htmlTables []string
+	text = convertMarkdownTables(text, &htmlTables)
+
+	// 4. Headers # Title -> just the title text
 	headerRe := regexp.MustCompile(`(?m)^#{1,6}\s+(.+)$`)
 	text = headerRe.ReplaceAllString(text, "$1")
 
-	// 4. Blockquotes > text -> just the text
+	// 5. Blockquotes > text -> just the text
 	blockquoteRe := regexp.MustCompile(`(?m)^>\s*(.*)$`)
 	text = blockquoteRe.ReplaceAllString(text, "$1")
 
-	// 5. Escape HTML special characters
+	// 6. Escape HTML special characters
 	text = strings.ReplaceAll(text, "&", "&amp;")
 	text = strings.ReplaceAll(text, "<", "&lt;")
 	text = strings.ReplaceAll(text, ">", "&gt;")
 
-	// 6. Links [text](url)
+	// 7. Links [text](url)
 	linkRe := regexp.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`)
 	text = linkRe.ReplaceAllString(text, `<a href="$2">$1</a>`)
 
-	// 7. Bold **text** or __text__
+	// 8. Bold **text** or __text__
 	boldRe1 := regexp.MustCompile(`\*\*(.+?)\*\*`)
 	text = boldRe1.ReplaceAllString(text, "<b>$1</b>")
 	boldRe2 := regexp.MustCompile(`__(.+?)__`)
 	text = boldRe2.ReplaceAllString(text, "<b>$1</b>")
 
-	// 8. Italic *text* (single asterisk, not already bold)
+	// 9. Italic *text* (single asterisk, not already bold)
 	italicRe := regexp.MustCompile(`(?:^|\s)\*([^*]+)\*(?:$|\s)`)
 	text = italicRe.ReplaceAllString(text, " <i>$1</i> ")
 
-	// 9. Strikethrough ~~text~~
+	// 10. Strikethrough ~~text~~
 	strikeRe := regexp.MustCompile("~~(.+?)~~")
 	text = strikeRe.ReplaceAllString(text, "<s>$1</s>")
 
-	// 10. Bullet lists - item -> • item
+	// 11. Bullet lists - item -> • item
 	bulletRe := regexp.MustCompile(`(?m)^[-*]\s+`)
 	text = bulletRe.ReplaceAllString(text, "• ")
 
-	// 11. Restore inline code with HTML tags
+	// 12. Restore inline code with HTML tags
 	for i, code := range inlineCodes {
 		escaped := strings.ReplaceAll(code, "&", "&amp;")
 		escaped = strings.ReplaceAll(escaped, "<", "&lt;")
@@ -395,13 +399,71 @@ func markdownToTelegramHTML(text string) string {
 		text = strings.ReplaceAll(text, fmt.Sprintf("\x00IC%d\x00", i), fmt.Sprintf("<code>%s</code>", escaped))
 	}
 
-	// 12. Restore code blocks with HTML tags
+	// 13. Restore code blocks with HTML tags
 	for i, code := range codeBlocks {
 		escaped := strings.ReplaceAll(code, "&", "&amp;")
 		escaped = strings.ReplaceAll(escaped, "<", "&lt;")
 		escaped = strings.ReplaceAll(escaped, ">", "&gt;")
 		text = strings.ReplaceAll(text, fmt.Sprintf("\x00CB%d\x00", i), fmt.Sprintf("<pre><code>%s</code></pre>", escaped))
 	}
+
+	// 14. Restore HTML tables
+	for i, table := range htmlTables {
+		text = strings.ReplaceAll(text, fmt.Sprintf("\x00TBL%d\x00", i), table)
+	}
+
+	return text
+}
+
+// convertMarkdownTables finds markdown tables and converts them to HTML tables
+func convertMarkdownTables(text string, htmlTables *[]string) string {
+	// Match markdown tables: lines with | separators
+	// A table consists of: header row, separator row (|---|---|), and data rows
+	tableRe := regexp.MustCompile(`(?m)^(\|.+\|)\n(\|[\s:|-]+\|)\n((?:\|.+\|\n?)+)`)
+
+	text = tableRe.ReplaceAllStringFunc(text, func(match string) string {
+		lines := strings.Split(strings.TrimSpace(match), "\n")
+		if len(lines) < 2 {
+			return match // Not a valid table
+		}
+
+		var htmlTable strings.Builder
+		htmlTable.WriteString("<table>")
+
+		// Process header row
+		headerRow := strings.Trim(lines[0], "|")
+		headers := strings.Split(headerRow, "|")
+		htmlTable.WriteString("<thead><tr>")
+		for _, header := range headers {
+			htmlTable.WriteString("<th>")
+			htmlTable.WriteString(strings.TrimSpace(header))
+			htmlTable.WriteString("</th>")
+		}
+		htmlTable.WriteString("</tr></thead>")
+
+		// Process data rows (skip separator row at index 1)
+		if len(lines) > 2 {
+			htmlTable.WriteString("<tbody>")
+			for i := 2; i < len(lines); i++ {
+				dataRow := strings.Trim(lines[i], "|")
+				cells := strings.Split(dataRow, "|")
+				htmlTable.WriteString("<tr>")
+				for _, cell := range cells {
+					htmlTable.WriteString("<td>")
+					htmlTable.WriteString(strings.TrimSpace(cell))
+					htmlTable.WriteString("</td>")
+				}
+				htmlTable.WriteString("</tr>")
+			}
+			htmlTable.WriteString("</tbody>")
+		}
+
+		htmlTable.WriteString("</table>")
+
+		// Store the HTML table and return a placeholder
+		*htmlTables = append(*htmlTables, htmlTable.String())
+		return fmt.Sprintf("\x00TBL%d\x00", len(*htmlTables)-1)
+	})
 
 	return text
 }
