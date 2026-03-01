@@ -279,24 +279,22 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 	// Append token usage and context window stats to final response
 	contextSize := len(sess.GetHistory(maxHistoryMessages))
 	
-	// Build stats string with optional context window percentage
+	// Build stats string with token usage and context percentage
 	var tokenStats string
 	contextLength := a.modelManager.GetContextLength()
 	if contextLength > 0 {
 		// Calculate percentage of context window used
 		percentage := float64(totalPromptTokens) / float64(contextLength) * 100
-		tokenStats = fmt.Sprintf("\n\n📊 Tokens: %s prompt + %s completion = %s total | Context: %.1f%% (%s/%s) | History: %d/%d msgs",
+		tokenStats = fmt.Sprintf("\n📊 Tokens: %s prompt + %s completion = %s total\n| Context: %.1f%%\n| History: %d/%d msgs",
 			formatNumber(totalPromptTokens),
 			formatNumber(totalCompletionTokens),
 			formatNumber(totalTokens),
 			percentage,
-			formatNumber(totalPromptTokens),
-			formatNumber(contextLength),
 			contextSize,
 			maxHistoryMessages)
 	} else {
 		// Fallback if context length not available
-		tokenStats = fmt.Sprintf("\n\n📊 Tokens: %s prompt + %s completion = %s total | History: %d/%d msgs",
+		tokenStats = fmt.Sprintf("\n📊 Tokens: %s prompt + %s completion = %s total\n| History: %d/%d msgs",
 			formatNumber(totalPromptTokens),
 			formatNumber(totalCompletionTokens),
 			formatNumber(totalTokens),
