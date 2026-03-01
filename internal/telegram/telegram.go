@@ -407,15 +407,16 @@ func markdownToTelegramHTML(text string) string {
 		text = strings.ReplaceAll(text, fmt.Sprintf("\x00CB%d\x00", i), fmt.Sprintf("<pre><code>%s</code></pre>", escaped))
 	}
 
-	// 14. Restore HTML tables
+	// 14. Restore formatted tables wrapped in <pre> tags for monospace display
 	for i, table := range htmlTables {
-		text = strings.ReplaceAll(text, fmt.Sprintf("@@TABLE_%d@@", i), table)
+		text = strings.ReplaceAll(text, fmt.Sprintf("@@TABLE_%d@@", i), fmt.Sprintf("<pre>%s</pre>", table))
 	}
 
 	return text
 }
 
-// convertMarkdownTables finds markdown tables and converts them to HTML tables
+// convertMarkdownTables finds markdown tables and converts them to pre-formatted text
+// Telegram doesn't support <table> tags, so we use <pre> for monospace alignment
 func convertMarkdownTables(text string, htmlTables *[]string) string {
 	// Match markdown tables: lines with | separators
 	// A table consists of: header row, separator row (|---|---|), and data rows
@@ -427,45 +428,91 @@ func convertMarkdownTables(text string, htmlTables *[]string) string {
 			return match // Not a valid table
 		}
 
-		var htmlTable strings.Builder
-		htmlTable.WriteString("<table>")
+		// Parse all rows
+		var rows [][]string
 
-		// Process header row
+		// Header row
 		headerRow := strings.Trim(lines[0], "|")
 		headers := strings.Split(headerRow, "|")
-		htmlTable.WriteString("<thead><tr>")
-		for _, header := range headers {
-			htmlTable.WriteString("<th>")
-			htmlTable.WriteString(strings.TrimSpace(header))
-			htmlTable.WriteString("</th>")
+		for i := range headers {
+			headers[i] = strings.TrimSpace(headers[i])
 		}
-		htmlTable.WriteString("</tr></thead>")
+		rows = append(rows, headers)
 
-		// Process data rows (skip separator row at index 1)
-		if len(lines) > 2 {
-			htmlTable.WriteString("<tbody>")
-			for i := 2; i < len(lines); i++ {
-				dataRow := strings.Trim(lines[i], "|")
-				cells := strings.Split(dataRow, "|")
-				htmlTable.WriteString("<tr>")
-				for _, cell := range cells {
-					htmlTable.WriteString("<td>")
-					htmlTable.WriteString(strings.TrimSpace(cell))
-					htmlTable.WriteString("</td>")
-				}
-				htmlTable.WriteString("</tr>")
+		// Data rows (skip separator row at index 1)
+		for i := 2; i < len(lines); i++ {
+			dataRow := strings.Trim(lines[i], "|")
+			cells := strings.Split(dataRow, "|")
+			for j := range cells {
+				cells[j] = strings.TrimSpace(cells[j])
 			}
-			htmlTable.WriteString("</tbody>")
+			rows = append(rows, cells)
 		}
 
-		htmlTable.WriteString("</table>")
+		// Calculate column widths
+		numCols := len(headers)
+		colWidths := make([]int, numCols)
+		for _, row := range rows {
+			for i, cell := range row {
+				if i < numCols && len(cell) > colWidths[i] {
+					colWidths[i] = len(cell)
+				}
+			}
+		}
 
-		// Store the HTML table and return a placeholder
-		*htmlTables = append(*htmlTables, htmlTable.String())
+		// Build formatted table
+		var formattedTable strings.Builder
+
+		// Header row
+		for i, header := range headers {
+			if i > 0 {
+				formattedTable.WriteString(" │ ")
+			}
+			formattedTable.WriteString(padRight(header, colWidths[i]))
+		}
+		formattedTable.WriteString("\n")
+
+		// Separator row
+		for i := range headers {
+			if i > 0 {
+				formattedTable.WriteString("─┼─")
+			}
+			formattedTable.WriteString(strings.Repeat("─", colWidths[i]))
+		}
+		formattedTable.WriteString("\n")
+
+		// Data rows
+		for rowIdx := 1; rowIdx < len(rows); rowIdx++ {
+			row := rows[rowIdx]
+			for i := 0; i < numCols; i++ {
+				if i > 0 {
+					formattedTable.WriteString(" │ ")
+				}
+				cell := ""
+				if i < len(row) {
+					cell = row[i]
+				}
+				formattedTable.WriteString(padRight(cell, colWidths[i]))
+			}
+			if rowIdx < len(rows)-1 {
+				formattedTable.WriteString("\n")
+			}
+		}
+
+		// Store the formatted table and return a placeholder
+		*htmlTables = append(*htmlTables, formattedTable.String())
 		return fmt.Sprintf("@@TABLE_%d@@", len(*htmlTables)-1)
 	})
 
 	return text
+}
+
+// padRight pads a string with spaces to reach the desired width
+func padRight(s string, width int) string {
+	if len(s) >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-len(s))
 }
 
 // SendMessage sends a text message to a chat, splitting if necessary

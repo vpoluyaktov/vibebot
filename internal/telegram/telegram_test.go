@@ -17,7 +17,7 @@ func TestMarkdownTableToHTML(t *testing.T) {
 |------|-----|------|
 | John | 30  | NYC  |
 | Jane | 25  | LA   |`,
-			expected: "<table><thead><tr><th>Name</th><th>Age</th><th>City</th></tr></thead><tbody><tr><td>John</td><td>30</td><td>NYC</td></tr><tr><td>Jane</td><td>25</td><td>LA</td></tr></tbody></table>",
+			expected: "<pre>",
 		},
 		{
 			name: "Table with text before and after",
@@ -28,14 +28,14 @@ func TestMarkdownTableToHTML(t *testing.T) {
 | Value1  | Value2  |
 
 End of table.`,
-			expected: "<table><thead><tr><th>Column1</th><th>Column2</th></tr></thead><tbody><tr><td>Value1</td><td>Value2</td></tr></tbody></table>",
+			expected: "<pre>",
 		},
 		{
 			name: "Table with alignment markers",
 			input: `| Left | Center | Right |
 |:-----|:------:|------:|
 | A    | B      | C     |`,
-			expected: "<table><thead><tr><th>Left</th><th>Center</th><th>Right</th></tr></thead><tbody><tr><td>A</td><td>B</td><td>C</td></tr></tbody></table>",
+			expected: "<pre>",
 		},
 	}
 
@@ -68,10 +68,10 @@ func TestConvertMarkdownTables(t *testing.T) {
 		t.Errorf("Expected placeholder in result, got: %s", result)
 	}
 
-	// HTML table should be properly formatted
-	expectedHTML := "<table><thead><tr><th>Name</th><th>Age</th></tr></thead><tbody><tr><td>John</td><td>30</td></tr><tr><td>Jane</td><td>25</td></tr></tbody></table>"
-	if htmlTables[0] != expectedHTML {
-		t.Errorf("Expected HTML:\n%s\n\nGot:\n%s", expectedHTML, htmlTables[0])
+	// Formatted table should be properly aligned
+	expectedFormatted := "Name │ Age\n─────┼────\nJohn │ 30 \nJane │ 25 "
+	if htmlTables[0] != expectedFormatted {
+		t.Errorf("Expected formatted table:\n%s\n\nGot:\n%s", expectedFormatted, htmlTables[0])
 	}
 }
 
@@ -91,9 +91,14 @@ End of message.`
 
 	result := markdownToTelegramHTML(input)
 
-	// Check that table is converted to HTML
-	if !strings.Contains(result, "<table>") {
-		t.Error("Expected HTML table in result")
+	// Check that table is converted to pre-formatted text
+	if !strings.Contains(result, "<pre>") {
+		t.Error("Expected <pre> formatted table in result")
+	}
+
+	// Should contain table separator characters
+	if !strings.Contains(result, "│") || !strings.Contains(result, "─") {
+		t.Error("Expected table formatting characters in result")
 	}
 
 	// Check that bold is converted
