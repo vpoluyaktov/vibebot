@@ -310,6 +310,36 @@ func (m *Memory) AppendGlobalFacts(facts []string) error {
 	return m.SaveGlobalMemory(newContent)
 }
 
+// UpdateProjectFields updates the template fields in a project memory file
+func (m *Memory) UpdateProjectFields(projectName string, description, status, focus string) error {
+	if err := m.ValidateProjectName(projectName); err != nil {
+		return err
+	}
+
+	// Read current content
+	content, err := m.LoadProjectMemory(projectName)
+	if err != nil {
+		return fmt.Errorf("failed to load project memory: %w", err)
+	}
+
+	// Update Description field if provided
+	if description != "" {
+		content = strings.Replace(content, "[Brief project description]", description, 1)
+	}
+
+	// Update Status field if provided
+	if status != "" {
+		content = strings.Replace(content, "Active", status, 1)
+	}
+
+	// Update Current Focus field if provided
+	if focus != "" {
+		content = strings.Replace(content, "[What you're currently working on]", focus, 1)
+	}
+
+	return m.SaveProjectMemory(projectName, content)
+}
+
 // AppendProjectFacts appends facts to a project memory file
 func (m *Memory) AppendProjectFacts(projectName string, facts []string) error {
 	if len(facts) == 0 {
