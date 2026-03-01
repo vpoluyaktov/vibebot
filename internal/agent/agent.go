@@ -238,7 +238,8 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 		}
 		messages = append(messages, assistantMsg)
 
-		// Don't save tool call messages to session - they're implementation details
+		// Save assistant message with tool calls to session
+		sess.AddMessage(assistantMsg)
 
 		// Execute each tool call
 		for _, toolCall := range response.ToolCalls {
@@ -272,6 +273,9 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 				ToolCallID: toolCall.ID,
 			}
 			messages = append(messages, toolMsg)
+
+			// Save tool result to session
+			sess.AddMessage(toolMsg)
 		}
 
 		// Continue loop to let LLM process tool results
