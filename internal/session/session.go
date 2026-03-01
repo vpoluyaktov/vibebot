@@ -14,12 +14,14 @@ import (
 
 // Session represents a conversation session with message history
 type Session struct {
-	Key              string         `json:"key"`
-	Messages         []llm.Message  `json:"messages"`
-	CurrentProject   string         `json:"current_project,omitempty"`
-	CreatedAt        time.Time      `json:"created_at"`
-	UpdatedAt        time.Time      `json:"updated_at"`
-	LastConsolidated int            `json:"last_consolidated"`
+	Key              string        `json:"key"`
+	Messages         []llm.Message `json:"messages"`
+	CurrentProject   string        `json:"current_project,omitempty"`
+	ShowVerbose      bool          `json:"show_verbose"`
+	ShowStats        bool          `json:"show_stats"`
+	CreatedAt        time.Time     `json:"created_at"`
+	UpdatedAt        time.Time     `json:"updated_at"`
+	LastConsolidated int           `json:"last_consolidated"`
 	mu               sync.RWMutex
 }
 
@@ -92,17 +94,15 @@ func (s *Session) GetHistory(maxMessages int) []llm.Message {
 
 	// Get unconsolidated messages
 	unconsolidated := s.Messages[s.LastConsolidated:]
-	
+
 	// Limit to maxMessages
 	start := 0
 	if len(unconsolidated) > maxMessages {
 		start = len(unconsolidated) - maxMessages
 	}
-	
+
 	return unconsolidated[start:]
 }
-
-
 
 // Clear clears all messages in the session
 func (s *Session) Clear() {
@@ -267,4 +267,38 @@ func (m *Manager) GetSession(key string) (*Session, error) {
 // SaveSession is an alias for Save for consistency
 func (m *Manager) SaveSession(session *Session) error {
 	return m.Save(session)
+}
+
+// SetShowVerbose sets the verbose display preference
+func (s *Session) SetShowVerbose(show bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.ShowVerbose = show
+	s.UpdatedAt = time.Now()
+}
+
+// GetShowVerbose returns the verbose display preference
+func (s *Session) GetShowVerbose() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.ShowVerbose
+}
+
+// SetShowStats sets the stats display preference
+func (s *Session) SetShowStats(show bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.ShowStats = show
+	s.UpdatedAt = time.Now()
+}
+
+// GetShowStats returns the stats display preference
+func (s *Session) GetShowStats() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.ShowStats
 }
