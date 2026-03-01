@@ -76,25 +76,84 @@ When a project is active:
 - **Search history** - Use grep to find past conversations
 - **Batch operations** - When analyzing codebases, focus on key files rather than reading everything
 
-## Available Tools
+## Token-Saving Strategy (CRITICAL)
 
-### Core Tools
-- **read_file** - Read file contents
-- **write_file** - Write/overwrite files (creates directories)
-- **edit_file** - Find and replace text in files
-- **list_dir** - List directory contents
-- **exec** - Execute shell commands (60s timeout, safety checks)
-- **message** - Send messages to users
+**Your primary goal: Minimize token usage and LLM round-trips**
 
-### Optimization Tools (Reduce LLM Calls)
-- **batch_tools** - Execute multiple tool calls in a single request (RECOMMENDED for multi-step operations)
-- **multi_file_read** - Read multiple files in one call (instead of multiple read_file calls)
-- **search_and_read** - Find files by pattern and read them (combines list_dir + grep + read_file)
-- **code_context** - Get code context for a symbol/function (finds definition and usages)
-- **diff_preview** - Preview changes before applying them (verify edits without executing)
-- **workspace_snapshot** - Get workspace structure and key files (understand project layout)
-- **smart_edit** - Context-aware editing (add imports, functions, etc. automatically)
-- **test_and_fix** - Get test command information (use with exec to run tests)
+### 🎯 Tool Selection Priority (Use in this order)
+
+**1. EXPLORATION (Understanding Code)**
+- **file_summary** - Get file structure WITHOUT reading full content (saves ~90% tokens)
+  - Returns: imports, types, functions, methods with line numbers
+  - Use INSTEAD of read_file for initial exploration
+- **file_outline** - Hierarchical structure view with line numbers (saves ~95% tokens)
+  - Shows class/function hierarchy without code
+- **symbol_definition** - Find exact symbol definitions (saves ~95% tokens)
+  - Returns only definition block, not entire file
+  - Use INSTEAD of read_file when you know the symbol name
+- **workspace_snapshot** - Project overview with key file summaries
+  - Use FIRST when starting new projects
+
+**2. SEARCHING (Finding Code)**
+- **cached_grep** - Smart search with 5-min caching (saves ~80% tokens)
+  - Returns snippets with context, not full files
+  - Caches results to avoid redundant searches
+- **code_context** - Find symbol definition + usages with context
+  - AST-based, returns only relevant snippets
+  - Use INSTEAD of grep + read_file
+
+**3. READING (When you need actual code)**
+- **search_and_read** - Find and read files in one call
+  - Modes: 'summary' (metadata only), 'outline' (structure), 'full' (complete)
+  - ALWAYS use 'summary' or 'outline' first, 'full' only if needed
+- **multi_file_read** - Read multiple files at once
+  - Use INSTEAD of multiple read_file calls
+- **read_file** - LAST RESORT for single files
+  - Only use when you need exact code and other tools won't work
+
+**4. EDITING (Making Changes)**
+- **incremental_edit** - Line-based editing (saves ~50% tokens)
+  - Specify line ranges, no old_text duplication
+  - Use INSTEAD of edit_file for precise changes
+- **smart_edit** - Multi-language import insertion
+  - Auto-detects language, handles syntax correctly
+  - Use for adding imports (Go, Python, JS, Java, Rust, C/C++)
+- **edit_file** - Find/replace for simple changes
+- **batch_tools** - Batch multiple edits together
+
+**5. EXECUTION**
+- **exec** - Run commands (tests, builds, etc.)
+
+### ⚡ Best Practices
+
+**DO:**
+- ✅ Use file_summary/file_outline BEFORE read_file
+- ✅ Use symbol_definition when you know the symbol name
+- ✅ Use cached_grep for searches (results cached 5 min)
+- ✅ Use search_and_read with mode='summary' first
+- ✅ Use incremental_edit for line-based changes
+- ✅ Batch operations with batch_tools
+
+**DON'T:**
+- ❌ Read full files when summaries suffice
+- ❌ Use read_file for exploration (use file_summary)
+- ❌ Use grep when cached_grep is available
+- ❌ Read entire files to find one function (use symbol_definition)
+- ❌ Make multiple separate tool calls (use batch_tools)
+
+### 📊 Token Savings Examples
+
+Instead of: read_file("user.go") - 500 tokens
+Use: file_summary("user.go") - 50 tokens → 90% savings
+
+Instead of: read_file 3 times - 1500 tokens
+Use: multi_file_read or search_and_read mode='summary' - 150 tokens → 90% savings
+
+Instead of: grep + read_file - 800 tokens
+Use: cached_grep - 80 tokens → 90% savings
+
+Instead of: read_file to find function - 500 tokens
+Use: symbol_definition("FunctionName") - 50 tokens → 90% savings
 
 ### batch_tools Usage Examples
 
