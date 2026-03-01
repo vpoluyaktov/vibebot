@@ -342,11 +342,11 @@ func markdownToTelegramHTML(text string) string {
 	})
 
 	// 3. Headers # Title -> just the title text
-	headerRe := regexp.MustCompile("(?m)^#{1,6}\\s+(.+)$")
+	headerRe := regexp.MustCompile(`(?m)^#{1,6}\s+(.+)$`)
 	text = headerRe.ReplaceAllString(text, "$1")
 
 	// 4. Blockquotes > text -> just the text
-	blockquoteRe := regexp.MustCompile("(?m)^>\\s*(.*)$")
+	blockquoteRe := regexp.MustCompile(`(?m)^>\s*(.*)$`)
 	text = blockquoteRe.ReplaceAllString(text, "$1")
 
 	// 5. Escape HTML special characters
@@ -355,17 +355,17 @@ func markdownToTelegramHTML(text string) string {
 	text = strings.ReplaceAll(text, ">", "&gt;")
 
 	// 6. Links [text](url)
-	linkRe := regexp.MustCompile("\\[([^\\]]+)\\]\\(([^)]+)\\)")
+	linkRe := regexp.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`)
 	text = linkRe.ReplaceAllString(text, `<a href="$2">$1</a>`)
 
 	// 7. Bold **text** or __text__
-	boldRe1 := regexp.MustCompile("\\*\\*(.+?)\\*\\*")
+	boldRe1 := regexp.MustCompile(`\*\*(.+?)\*\*`)
 	text = boldRe1.ReplaceAllString(text, "<b>$1</b>")
-	boldRe2 := regexp.MustCompile("__(.+?)__")
+	boldRe2 := regexp.MustCompile(`__(.+?)__`)
 	text = boldRe2.ReplaceAllString(text, "<b>$1</b>")
 
 	// 8. Italic *text* (single asterisk, not already bold)
-	italicRe := regexp.MustCompile("(?:^|\\s)\\*([^*]+)\\*(?:$|\\s)")
+	italicRe := regexp.MustCompile(`(?:^|\s)\*([^*]+)\*(?:$|\s)`)
 	text = italicRe.ReplaceAllString(text, " <i>$1</i> ")
 
 	// 9. Strikethrough ~~text~~
@@ -373,7 +373,7 @@ func markdownToTelegramHTML(text string) string {
 	text = strikeRe.ReplaceAllString(text, "<s>$1</s>")
 
 	// 10. Bullet lists - item -> • item
-	bulletRe := regexp.MustCompile("(?m)^[-*]\\s+")
+	bulletRe := regexp.MustCompile(`(?m)^[-*]\s+`)
 	text = bulletRe.ReplaceAllString(text, "• ")
 
 	// 11. Restore inline code with HTML tags
