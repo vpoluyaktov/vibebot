@@ -409,7 +409,7 @@ func markdownToTelegramHTML(text string) string {
 
 	// 14. Restore HTML tables
 	for i, table := range htmlTables {
-		text = strings.ReplaceAll(text, fmt.Sprintf("\x00TBL%d\x00", i), table)
+		text = strings.ReplaceAll(text, fmt.Sprintf("@@TABLE_%d@@", i), table)
 	}
 
 	return text
@@ -462,7 +462,7 @@ func convertMarkdownTables(text string, htmlTables *[]string) string {
 
 		// Store the HTML table and return a placeholder
 		*htmlTables = append(*htmlTables, htmlTable.String())
-		return fmt.Sprintf("\x00TBL%d\x00", len(*htmlTables)-1)
+		return fmt.Sprintf("@@TABLE_%d@@", len(*htmlTables)-1)
 	})
 
 	return text

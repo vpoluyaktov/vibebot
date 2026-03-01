@@ -64,7 +64,7 @@ func TestConvertMarkdownTables(t *testing.T) {
 	}
 
 	// Result should contain placeholder
-	if !strings.Contains(result, "\x00TBL0\x00") {
+	if !strings.Contains(result, "@@TABLE_0@@") {
 		t.Errorf("Expected placeholder in result, got: %s", result)
 	}
 
