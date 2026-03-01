@@ -76,7 +76,7 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 			"/stop - Stop processing and clear queue\n" +
 			"/help - Show this help message\n\n" +
 			"**Model Management:**\n" +
-			"/model, /models - Show current LLM model\n" +
+			"/model - Show current LLM model\n" +
 			"/model list - List all available models\n" +
 			"/model <number> - Switch by number\n" +
 			"/model <partial-name> - Switch by name\n\n" +
@@ -89,8 +89,8 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 			"Just send me a message and I'll help you!", nil
 	}
 
-	// Handle /model and /models commands
-	if strings.HasPrefix(message, "/model") || strings.HasPrefix(message, "/models") {
+	// Handle /model command
+	if strings.HasPrefix(message, "/model") {
 		return a.handleModelCommand(message)
 	}
 
