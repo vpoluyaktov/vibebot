@@ -56,6 +56,8 @@ func New(token string, handler MessageHandler, allowedUsers []int64) (*Gateway, 
 		{Command: "stop", Description: "Stop processing and clear queue"},
 		{Command: "model", Description: "Show/switch LLM model"},
 		{Command: "project", Description: "Manage projects (list/switch/create/delete)"},
+		{Command: "verbose", Description: "Toggle tool usage display"},
+		{Command: "stats", Description: "Toggle token stats display"},
 		{Command: "help", Description: "Show available commands"},
 	}
 
