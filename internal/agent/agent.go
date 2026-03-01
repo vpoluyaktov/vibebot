@@ -405,10 +405,21 @@ func (a *Agent) consolidateSession(sessionKey string, messages []llm.Message, pr
 		}
 	}
 
-	if projectName != "" && len(result.ProjectFacts) > 0 {
-		logger.Info("Appending %d project facts to project '%s'", len(result.ProjectFacts), projectName)
-		if err := a.memory.AppendProjectFacts(projectName, result.ProjectFacts); err != nil {
-			logger.Error("Failed to append project facts: %v", err)
+	if projectName != "" {
+		// Update project template fields if consolidation extracted structured info
+		if result.ProjectDescription != "" || result.ProjectStatus != "" || result.ProjectFocus != "" {
+			logger.Info("Updating project '%s' template fields", projectName)
+			if err := a.memory.UpdateProjectFields(projectName, result.ProjectDescription, result.ProjectStatus, result.ProjectFocus); err != nil {
+				logger.Error("Failed to update project fields: %v", err)
+			}
+		}
+
+		// Append project facts
+		if len(result.ProjectFacts) > 0 {
+			logger.Info("Appending %d project facts to project '%s'", len(result.ProjectFacts), projectName)
+			if err := a.memory.AppendProjectFacts(projectName, result.ProjectFacts); err != nil {
+				logger.Error("Failed to append project facts: %v", err)
+			}
 		}
 	}
 
