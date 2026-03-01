@@ -61,6 +61,15 @@ func New(token string, handler MessageHandler, allowedUsers []int64) (*Gateway, 
 		{Command: "help", Description: "Show available commands"},
 	}
 
+	// Delete old commands first to force refresh
+	deleteCmd := tgbotapi.NewDeleteMyCommands()
+	if _, err := bot.Request(deleteCmd); err != nil {
+		logger.Warn("Failed to delete old bot commands: %v", err)
+	} else {
+		logger.Debug("Old bot commands deleted")
+	}
+
+	// Register new commands
 	cfg := tgbotapi.NewSetMyCommands(commands...)
 	if _, err := bot.Request(cfg); err != nil {
 		logger.Warn("Failed to register bot commands: %v", err)
