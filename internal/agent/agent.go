@@ -74,11 +74,19 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 	// Handle commands
 	if message == "/new" {
 		sess := a.sessions.GetOrCreate(chatID)
+
+		// Trigger consolidation in background before clearing
+		if len(sess.Messages) > 0 {
+			sessionKey := fmt.Sprintf("telegram:%d", chatID)
+			logger.Info("Triggering consolidation before /new (chat %d, %d messages)", chatID, len(sess.Messages))
+			go a.consolidateSession(sessionKey)
+		}
+
 		sess.Clear()
 		if err := a.sessions.Save(sess); err != nil {
 			logger.Warn("Failed to save cleared session: %v", err)
 		}
-		return "🔄 New conversation started. Previous context cleared.", nil
+		return " New conversation started. Previous context cleared.", nil
 	}
 
 	if message == "/help" {
@@ -573,6 +581,13 @@ func (a *Agent) handleProjectCommand(chatID int64, message string) (string, erro
 			return fmt.Sprintf("❌ Project `%s` already exists!", projectName), nil
 		}
 
+		// Trigger consolidation in background before switching projects
+		if len(sess.Messages) > 0 {
+			sessionKey := fmt.Sprintf("telegram:%d", chatID)
+			logger.Info("Triggering consolidation before creating project (chat %d, %d messages)", chatID, len(sess.Messages))
+			go a.consolidateSession(sessionKey)
+		}
+
 		// Create project using memory manager
 		if err := a.memory.CreateProject(projectName); err != nil {
 			return fmt.Sprintf("❌ Error creating project: %v", err), nil
@@ -638,6 +653,13 @@ func (a *Agent) handleProjectCommand(chatID int64, message string) (string, erro
 	// Check if project exists
 	if !a.memory.ProjectExists(projectName) {
 		return fmt.Sprintf("❌ Project `%s` does not exist!\n\nUse `/projects` to see available projects or `/project create %s` to create it.", projectName, projectName), nil
+	}
+
+	// Trigger consolidation in background before switching projects
+	if len(sess.Messages) > 0 {
+		sessionKey := fmt.Sprintf("telegram:%d", chatID)
+		logger.Info("Triggering consolidation before switching to project '%s' (chat %d, %d messages)", projectName, chatID, len(sess.Messages))
+		go a.consolidateSession(sessionKey)
 	}
 
 	// Load project memory to verify it's readable
