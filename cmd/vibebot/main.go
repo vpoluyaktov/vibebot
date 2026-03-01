@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/vpoluyaktov/vibebot/internal/tasks"
 	"context"
 	"fmt"
 	"os"
@@ -92,6 +93,16 @@ func runGateway() {
 		logger.Debug("Fetched context lengths for %d models", len(contextLengths))
 	}
 
+	// Initialize task manager
+	taskMgr := tasks.NewManager(cfg.WorkspaceDir + "/tasks")
+
+	// Initialize Telegram gateway FIRST (needed for timer tool)
+	// We'll set the actual handler after agent is created
+	tg, err := telegram.New(cfg.TelegramToken, nil, cfg.TelegramAllowedUsers)
+	if err != nil {
+		logger.Fatal("Failed to initialize Telegram gateway: %v", err)
+	}
+
 	// Initialize tool registry
 	toolRegistry := tools.NewRegistry()
 	tools.RegisterFileTools(toolRegistry, cfg.WorkspaceDir)
@@ -114,19 +125,24 @@ func runGateway() {
 	tools.RegisterCachedGrep(toolRegistry, cfg.WorkspaceDir)
 	tools.RegisterIncrementalEdit(toolRegistry, cfg.WorkspaceDir)
 
-	// Initialize agent
-	ag := agent.New(provider, mem, toolRegistry, sessionMgr, modelMgr, cfg.WorkspaceDir)
+	// Register timer tool BEFORE agent creation (needs telegram gateway and task manager)
+	tools.RegisterTimerTool(toolRegistry, tg, taskMgr)
+
+	// Initialize agent (with all tools registered)
+	ag := agent.New(provider, mem, toolRegistry, sessionMgr, modelMgr, cfg.WorkspaceDir, taskMgr)
+
+	// Set up task resumption handler
+	taskMgr.SetResumeHandler(func(ctx context.Context, chatID int64, taskContext string) error {
+		return ag.ResumeTask(ctx, chatID, taskContext)
+	})
 
 	// Create message handler
 	handler := func(ctx context.Context, chatID int64, message string) (string, error) {
 		return ag.ProcessMessage(ctx, chatID, message)
 	}
 
-	// Initialize Telegram gateway
-	tg, err := telegram.New(cfg.TelegramToken, handler, cfg.TelegramAllowedUsers)
-	if err != nil {
-		logger.Fatal("Failed to initialize Telegram gateway: %v", err)
-	}
+	// Now set the handler on the telegram gateway
+	tg.SetHandler(handler)
 
 	// Set up progress callback to send intermediate updates
 	ag.SetProgressCallback(func(chatID int64, message string, isToolHint bool) {
