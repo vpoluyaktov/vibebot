@@ -27,10 +27,13 @@ func New(llmProvider llm.Provider, mem *memory.Memory) *Consolidator {
 
 // ConsolidationResult contains the output of consolidation
 type ConsolidationResult struct {
-	Summary      string    // Human-readable summary for HISTORY.md
-	GlobalFacts  []string  // Facts to add to GlobalMemory.md
-	ProjectFacts []string  // Facts to add to project memory (if project active)
-	Timestamp    time.Time
+	Summary            string   // Human-readable summary for HISTORY.md
+	GlobalFacts        []string // Facts to add to GlobalMemory.md
+	ProjectFacts       []string // Facts to add to project memory (if project active)
+	ProjectDescription string   // Brief project description (for Description section)
+	ProjectStatus      string   // Project status (for Status section)
+	ProjectFocus       string   // Current focus (for Current Focus section)
+	Timestamp          time.Time
 }
 
 // ConsolidateMessages summarizes old messages and extracts facts
@@ -69,7 +72,7 @@ Follow the output format exactly as specified. Be concise and extract only truly
 	}
 
 	result.Timestamp = time.Now()
-	logger.Info("Consolidation complete: %d global facts, %d project facts", 
+	logger.Info("Consolidation complete: %d global facts, %d project facts",
 		len(result.GlobalFacts), len(result.ProjectFacts))
 
 	return result, nil
@@ -106,11 +109,24 @@ func (c *Consolidator) buildConsolidationPrompt(messages []llm.Message, projectN
 	sb.WriteString("3. Categorize facts as either:\n")
 	sb.WriteString("   - GLOBAL: Cross-project facts (user preferences, general knowledge, system info)\n")
 	sb.WriteString("   - PROJECT: Project-specific facts (only if project is active)\n\n")
+	sb.WriteString("**For project analysis conversations**, extract comprehensive information:\n")
+	sb.WriteString("- Project purpose/description (what it does, main goals)\n")
+	sb.WriteString("- Technical stack (languages, frameworks, key dependencies)\n")
+	sb.WriteString("- Architecture (structure, components, design patterns)\n")
+	sb.WriteString("- Key features and capabilities\n")
+	sb.WriteString("- Current status (production-ready, in-development, etc.)\n")
+	sb.WriteString("- Important technical decisions or constraints\n\n")
 
 	sb.WriteString("## Output Format\n\n")
 	sb.WriteString("Provide your response in the following format:\n\n")
 	sb.WriteString("### SUMMARY\n")
 	sb.WriteString("[2-3 paragraph summary of the conversation]\n\n")
+	sb.WriteString("### PROJECT_DESCRIPTION\n")
+	sb.WriteString("[1-2 sentence description of what the project does - only for project analysis conversations]\n\n")
+	sb.WriteString("### PROJECT_STATUS\n")
+	sb.WriteString("[Project status: Production-ready / In Development / Prototype / etc. - only for project analysis]\n\n")
+	sb.WriteString("### PROJECT_FOCUS\n")
+	sb.WriteString("[What the project is currently focused on - only for project analysis]\n\n")
 	sb.WriteString("### GLOBAL_FACTS\n")
 	sb.WriteString("- [Fact 1]\n")
 	sb.WriteString("- [Fact 2]\n")
@@ -120,6 +136,7 @@ func (c *Consolidator) buildConsolidationPrompt(messages []llm.Message, projectN
 	sb.WriteString("- [Fact 2]\n")
 	sb.WriteString("...\n\n")
 	sb.WriteString("If there are no facts in a category, write \"None\" under that section.\n")
+	sb.WriteString("For non-project-analysis conversations, leave PROJECT_DESCRIPTION, PROJECT_STATUS, and PROJECT_FOCUS as \"None\".\n")
 
 	return sb.String()
 }
@@ -152,6 +169,30 @@ func (c *Consolidator) parseConsolidationResponse(content string, projectName st
 		case strings.Contains(strings.ToUpper(header), "SUMMARY"):
 			result.Summary = strings.TrimSpace(body)
 
+		case strings.Contains(strings.ToUpper(header), "PROJECT_DESCRIPTION"):
+			if projectName != "" {
+				desc := strings.TrimSpace(body)
+				if desc != "" && strings.ToLower(desc) != "none" {
+					result.ProjectDescription = desc
+				}
+			}
+
+		case strings.Contains(strings.ToUpper(header), "PROJECT_STATUS"):
+			if projectName != "" {
+				status := strings.TrimSpace(body)
+				if status != "" && strings.ToLower(status) != "none" {
+					result.ProjectStatus = status
+				}
+			}
+
+		case strings.Contains(strings.ToUpper(header), "PROJECT_FOCUS"):
+			if projectName != "" {
+				focus := strings.TrimSpace(body)
+				if focus != "" && strings.ToLower(focus) != "none" {
+					result.ProjectFocus = focus
+				}
+			}
+
 		case strings.Contains(strings.ToUpper(header), "GLOBAL_FACTS"):
 			result.GlobalFacts = c.extractFacts(body)
 
@@ -177,7 +218,7 @@ func (c *Consolidator) extractFacts(text string) []string {
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		
+
 		// Skip empty lines and "None" markers
 		if line == "" || strings.ToLower(line) == "none" {
 			continue
