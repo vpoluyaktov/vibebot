@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"github.com/vpoluyaktov/vibebot/internal/tasks"
 	"context"
 	"fmt"
 	"regexp"
@@ -30,6 +31,7 @@ type KeyboardSender interface {
 }
 
 // Agent coordinates the AI assistant behavior
+// Agent coordinates the AI assistant behavior
 type Agent struct {
 	llm              llm.Provider
 	memory           *memory.Memory
@@ -40,10 +42,11 @@ type Agent struct {
 	progressCallback ProgressCallback
 	keyboardSender   KeyboardSender
 	workspacePath    string
+	taskManager      *tasks.Manager
 }
 
 // New creates a new Agent instance
-func New(provider llm.Provider, mem *memory.Memory, toolRegistry *tools.Registry, sessionMgr *session.Manager, modelMgr *modelmanager.Manager, workspacePath string) *Agent {
+func New(provider llm.Provider, mem *memory.Memory, toolRegistry *tools.Registry, sessionMgr *session.Manager, modelMgr *modelmanager.Manager, workspacePath string, taskMgr *tasks.Manager) *Agent {
 	return &Agent{
 		llm:              provider,
 		memory:           mem,
@@ -53,6 +56,7 @@ func New(provider llm.Provider, mem *memory.Memory, toolRegistry *tools.Registry
 		consolidator:     consolidation.New(provider, mem),
 		progressCallback: nil,
 		workspacePath:    workspacePath,
+		taskManager:      taskMgr,
 	}
 }
 
@@ -1155,4 +1159,36 @@ func (a *Agent) handleStatsCallback(chatID int64) (string, error) {
 	logger.Info("Stats mode toggled to %s for chat %d", status, chatID)
 	return fmt.Sprintf("%s **Token Stats: %s**\n\nToken usage statistics will %sbe displayed after LLM responses.",
 		emoji, status, map[bool]string{true: "", false: "not "}[newValue]), nil
+}
+
+
+// ResumeTask resumes a task when timer expires
+func (a *Agent) ResumeTask(ctx context.Context, chatID int64, taskContext string) error {
+	logger.Info("Resuming task for chat %d: %s", chatID, taskContext)
+	
+	// Get session
+	sess := a.sessions.GetOrCreate(chatID)
+	
+	// Add task context as a system message to guide the LLM
+	systemMsg := fmt.Sprintf("A timer you set has expired. Task context: %s\n\nPlease check on this task and report the results to the user.", taskContext)
+	
+	// Add user message to session
+	sess.AddMessage(llm.Message{
+		Role:    "user",
+		Content: systemMsg,
+	})
+	
+	// Process the message
+	response, err := a.ProcessMessage(ctx, chatID, systemMsg)
+	if err != nil {
+		logger.Error("Failed to process task resumption for chat %d: %v", chatID, err)
+		return err
+	}
+	
+	// Send notification to user
+	if a.progressCallback != nil {
+		a.progressCallback(chatID, response, false)
+	}
+	
+	return nil
 }

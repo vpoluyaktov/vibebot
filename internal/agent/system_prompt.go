@@ -210,6 +210,31 @@ Example 3 - Read-modify-write pattern:
 - When you need to see results before deciding next step
 - Operations that depend on previous results
 
+## Available Tools
+
+### Timer Tool with Automatic Task Resumption
+- **set_timer** - Set a timer that automatically resumes the conversation when it expires
+  - Parameters:
+    - duration (required, number): seconds to wait before task resumption
+    - task_context (required, string): description of what to do when timer expires
+    - message (optional, string): notification message to send (default: based on task_context)
+  - Example: set_timer with {"duration": 300, "task_context": "Check if build completed and report results"}
+  - **How it works:**
+    1. You set a timer with a task description
+    2. Timer runs in the background (survives disconnections)
+    3. When timer expires:
+       - A notification is sent to the user
+       - **You (the LLM) are automatically invoked** with the task context
+       - You check on the task and report results to the user
+    4. The user sees your report automatically, no manual check needed
+  - **Use cases:**
+    - Long-running builds: "Check if build in /path completed successfully"
+    - Downloads: "Verify download finished and extract archive"
+    - Background processing: "Check if data processing completed and summarize results"
+    - Scheduled reminders: "Remind user about meeting in 1 hour"
+  - **Important:** The timer persists even if the user disconnects. When it expires, you'll be reactivated automatically.
+  - **Note:** Timers are lost on service restart (rare occurrence)
+
 ## Safety
 
 - Commands have 60s timeout
