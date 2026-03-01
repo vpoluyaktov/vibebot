@@ -1025,11 +1025,21 @@ func (a *Agent) handleProjectCallback(chatID int64, value string) (string, error
 		return fmt.Sprintf("❌ Project `%s` does not exist!", projectName), nil
 	}
 
+	// Trigger consolidation in background before switching projects
+	if len(sess.Messages) > 0 {
+		sessionKey := fmt.Sprintf("telegram:%d", chatID)
+		logger.Info("Triggering consolidation before switching to project '%s' (chat %d, %d messages) via callback", projectName, chatID, len(sess.Messages))
+		go a.consolidateSession(sessionKey)
+	}
+
 	// Load project memory to verify it's readable
 	projectMemory, err := a.memory.LoadProjectMemory(projectName)
 	if err != nil {
 		return fmt.Sprintf("❌ Error loading project: %v", err), nil
 	}
+
+	// Clear session context to avoid mixing contexts between projects
+	sess.Clear()
 
 	// Switch to project
 	sess.SetProject(projectName)
