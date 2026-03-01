@@ -16,10 +16,14 @@ import (
 // MessageHandler is called when a message is received
 type MessageHandler func(ctx context.Context, chatID int64, message string) (string, error)
 
+// CallbackHandler is called when a callback query is received
+type CallbackHandler func(ctx context.Context, chatID int64, callbackData string) (string, error)
+
 // Gateway handles Telegram bot communication
 type Gateway struct {
 	bot             *tgbotapi.BotAPI
 	handler         MessageHandler
+	callbackHandler CallbackHandler
 	allowedUsers    []int64
 	processedMsgIDs map[int]bool            // Track processed message IDs to prevent duplicates
 	msgMutex        sync.Mutex              // Protects processedMsgIDs map
@@ -48,13 +52,11 @@ func New(token string, handler MessageHandler, allowedUsers []int64) (*Gateway, 
 
 	// Register bot commands for the command menu
 	commands := []tgbotapi.BotCommand{
-		{Command: "start", Description: "Start the bot"},
 		{Command: "new", Description: "Start a new conversation"},
 		{Command: "stop", Description: "Stop processing and clear queue"},
 		{Command: "model", Description: "Show/switch LLM model"},
+		{Command: "project", Description: "Manage projects (list/switch/create/delete)"},
 		{Command: "help", Description: "Show available commands"},
-		{Command: "projects", Description: "List existing projects"},
-		{Command: "project", Description: "Switch between projects or create/delete projects"},
 	}
 
 	cfg := tgbotapi.NewSetMyCommands(commands...)
@@ -67,12 +69,18 @@ func New(token string, handler MessageHandler, allowedUsers []int64) (*Gateway, 
 	return &Gateway{
 		bot:             bot,
 		handler:         handler,
+		callbackHandler: nil,
 		allowedUsers:    allowedUsers,
 		processedMsgIDs: make(map[int]bool),
 		chatLocks:       make(map[int64]*sync.Mutex),
 		processingState: make(map[int64]bool),
 		stopSignals:     make(map[int64]chan struct{}),
 	}, nil
+}
+
+// SetCallbackHandler sets the callback query handler
+func (g *Gateway) SetCallbackHandler(handler CallbackHandler) {
+	g.callbackHandler = handler
 }
 
 // Start begins listening for messages
@@ -87,6 +95,12 @@ func (g *Gateway) Start(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case update := <-updates:
+			// Handle callback queries (inline keyboard button presses)
+			if update.CallbackQuery != nil {
+				go g.handleCallbackQuery(ctx, update.CallbackQuery)
+				continue
+			}
+
 			if update.Message == nil {
 				continue
 			}
@@ -492,6 +506,85 @@ func splitMessage(text string, maxLength int) []string {
 	}
 
 	return chunks
+}
+
+// handleCallbackQuery processes callback queries from inline keyboards
+func (g *Gateway) handleCallbackQuery(ctx context.Context, query *tgbotapi.CallbackQuery) {
+	chatID := query.Message.Chat.ID
+	userID := query.From.ID
+	callbackData := query.Data
+
+	logger.Info("[%d] Callback from %s (ID: %d): %s", chatID, query.From.UserName, userID, callbackData)
+
+	// Check if user is allowed
+	if !g.isUserAllowed(userID) {
+		logger.Warn("Unauthorized callback attempt from user %d (%s)", userID, query.From.UserName)
+		// Answer the callback to remove loading state
+		callback := tgbotapi.NewCallback(query.ID, "⛔ Unauthorized")
+		g.bot.Request(callback)
+		return
+	}
+
+	// Answer the callback query to remove the loading state
+	callback := tgbotapi.NewCallback(query.ID, "")
+	if _, err := g.bot.Request(callback); err != nil {
+		logger.Error("Error answering callback query: %v", err)
+	}
+
+	// If no callback handler is set, treat it as a regular message
+	if g.callbackHandler == nil {
+		logger.Debug("No callback handler set, treating as message")
+		go g.handleMessage(ctx, query.Message)
+		return
+	}
+
+	// Call the callback handler
+	response, err := g.callbackHandler(ctx, chatID, callbackData)
+	if err != nil {
+		logger.Error("Error handling callback: %v", err)
+		response = fmt.Sprintf("Error: %v", err)
+	}
+
+	// Send the response
+	if err := g.SendMessage(chatID, response); err != nil {
+		logger.Error("Error sending callback response: %v", err)
+	}
+}
+
+// SendMessageWithKeyboard sends a message with an inline keyboard
+func (g *Gateway) SendMessageWithKeyboard(chatID int64, text string, keyboard [][]InlineButton) error {
+	html := markdownToTelegramHTML(text)
+	msg := tgbotapi.NewMessage(chatID, html)
+	msg.ParseMode = "HTML"
+
+	// Build inline keyboard
+	var rows [][]tgbotapi.InlineKeyboardButton
+	for _, row := range keyboard {
+		var buttons []tgbotapi.InlineKeyboardButton
+		for _, btn := range row {
+			buttons = append(buttons, tgbotapi.NewInlineKeyboardButtonData(btn.Text, btn.CallbackData))
+		}
+		rows = append(rows, buttons)
+	}
+
+	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(rows...)
+
+	_, err := g.bot.Send(msg)
+	if err != nil {
+		// Fall back to plain text
+		logger.Warn("HTML parse failed, falling back to plain text: %v", err)
+		msg.Text = text
+		msg.ParseMode = ""
+		_, err = g.bot.Send(msg)
+	}
+
+	return err
+}
+
+// InlineButton represents a button in an inline keyboard
+type InlineButton struct {
+	Text         string
+	CallbackData string
 }
 
 // GetChatID converts a string chat ID to int64

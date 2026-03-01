@@ -128,6 +128,16 @@ func runGateway() {
 		}
 	})
 
+	// Set up keyboard sender for inline keyboards (using adapter to avoid circular dependency)
+	keyboardAdapter := &telegramKeyboardAdapter{gateway: tg}
+	ag.SetKeyboardSender(keyboardAdapter)
+
+	// Set up callback handler for inline keyboard button presses
+	callbackHandler := func(ctx context.Context, chatID int64, callbackData string) (string, error) {
+		return ag.ProcessCallback(ctx, chatID, callbackData)
+	}
+	tg.SetCallbackHandler(callbackHandler)
+
 	// Setup graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -148,6 +158,15 @@ func runGateway() {
 	}
 
 	logger.Info("Shutdown complete")
+}
+
+// telegramKeyboardAdapter adapts telegram.Gateway to agent.KeyboardSender interface
+type telegramKeyboardAdapter struct {
+	gateway *telegram.Gateway
+}
+
+func (a *telegramKeyboardAdapter) SendMessageWithKeyboard(chatID int64, text string, keyboard [][]telegram.InlineButton) error {
+	return a.gateway.SendMessageWithKeyboard(chatID, text, keyboard)
 }
 
 func showVersion() {
