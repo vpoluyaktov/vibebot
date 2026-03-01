@@ -87,7 +87,9 @@ func (s *Session) AddMessage(msg llm.Message) {
 	s.UpdatedAt = time.Now()
 }
 
-// GetHistory returns recent messages for LLM context
+// GetHistory returns recent messages for LLM context with smart compression
+// Recent messages (last 5) include full tool details
+// Older messages compress tool results to save tokens
 func (s *Session) GetHistory(maxMessages int) []llm.Message {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -101,7 +103,36 @@ func (s *Session) GetHistory(maxMessages int) []llm.Message {
 		start = len(unconsolidated) - maxMessages
 	}
 
-	return unconsolidated[start:]
+	messages := unconsolidated[start:]
+
+	// Apply compression to older messages
+	// Keep last 5 messages with full detail, compress older ones
+	const fullDetailWindow = 5
+	result := make([]llm.Message, 0, len(messages))
+
+	for i, msg := range messages {
+		isRecent := i >= len(messages)-fullDetailWindow
+
+		if isRecent {
+			// Recent messages: include everything
+			result = append(result, msg)
+		} else if msg.Role == "tool" {
+			// Older tool results: compress to summary
+			compressed := msg
+			if len(msg.Content) > 200 {
+				compressed.Content = msg.Content[:200] + "... [truncated]"
+			}
+			result = append(result, compressed)
+		} else if msg.Role == "assistant" && len(msg.ToolCalls) > 0 {
+			// Older assistant with tool calls: keep structure but note compression
+			result = append(result, msg)
+		} else {
+			// User messages and final assistant responses: always include
+			result = append(result, msg)
+		}
+	}
+
+	return result
 }
 
 // Clear clears all messages in the session
