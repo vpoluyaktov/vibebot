@@ -21,8 +21,10 @@ type Gateway struct {
 	bot             *tgbotapi.BotAPI
 	handler         MessageHandler
 	allowedUsers    []int64
-	processedMsgIDs map[int]bool // Track processed message IDs to prevent duplicates
-	msgMutex        sync.Mutex   // Protects processedMsgIDs map
+	processedMsgIDs map[int]bool          // Track processed message IDs to prevent duplicates
+	msgMutex        sync.Mutex            // Protects processedMsgIDs map
+	chatLocks       map[int64]*sync.Mutex // Per-chat locks to prevent parallel processing
+	chatLocksMutex  sync.Mutex            // Protects chatLocks map
 }
 
 // New creates a new Telegram gateway
@@ -63,6 +65,7 @@ func New(token string, handler MessageHandler, allowedUsers []int64) (*Gateway, 
 		handler:         handler,
 		allowedUsers:    allowedUsers,
 		processedMsgIDs: make(map[int]bool),
+		chatLocks:       make(map[int64]*sync.Mutex),
 	}, nil
 }
 
@@ -100,11 +103,30 @@ func (g *Gateway) Start(ctx context.Context) error {
 	}
 }
 
+// getChatLock gets or creates a mutex for a specific chat
+func (g *Gateway) getChatLock(chatID int64) *sync.Mutex {
+	g.chatLocksMutex.Lock()
+	defer g.chatLocksMutex.Unlock()
+
+	if lock, exists := g.chatLocks[chatID]; exists {
+		return lock
+	}
+
+	lock := &sync.Mutex{}
+	g.chatLocks[chatID] = lock
+	return lock
+}
+
 // handleMessage processes an incoming message
 func (g *Gateway) handleMessage(ctx context.Context, msg *tgbotapi.Message) {
 	chatID := msg.Chat.ID
 	userID := msg.From.ID
 	text := msg.Text
+
+	// Acquire per-chat lock to prevent parallel processing of messages from the same chat
+	chatLock := g.getChatLock(chatID)
+	chatLock.Lock()
+	defer chatLock.Unlock()
 
 	logger.Info("[%d] %s (ID: %d): %s", chatID, msg.From.UserName, userID, text)
 

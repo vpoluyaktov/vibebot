@@ -14,8 +14,8 @@ import (
 	"github.com/vpoluyaktov/vibebot/internal/memory"
 	"github.com/vpoluyaktov/vibebot/internal/modelmanager"
 	"github.com/vpoluyaktov/vibebot/internal/session"
+	"github.com/vpoluyaktov/vibebot/internal/telegram"
 	"github.com/vpoluyaktov/vibebot/internal/tools"
-	"github.com/vpoluyaktov/vibebot/pkg/telegram"
 )
 
 func main() {
@@ -127,9 +127,6 @@ func runGateway() {
 			logger.Debug("Failed to send progress message: %v", err)
 		}
 	})
-
-	// Register message tool now that we have the telegram gateway
-	tools.RegisterMessageTool(toolRegistry, tg)
 
 	// Setup graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
