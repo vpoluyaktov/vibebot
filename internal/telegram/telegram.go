@@ -602,3 +602,8 @@ type InlineButton struct {
 func GetChatID(chatIDStr string) (int64, error) {
 	return strconv.ParseInt(chatIDStr, 10, 64)
 }
+
+// SetHandler sets or updates the message handler
+func (g *Gateway) SetHandler(handler MessageHandler) {
+	g.handler = handler
+}
