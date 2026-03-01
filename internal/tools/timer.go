@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/yourorg/vibebot/internal/session"
+	"github.com/vpoluyaktov/vibebot/internal/session"
 	"github.com/yourorg/vibebot/pkg/telegram"
 )
 
