@@ -97,6 +97,9 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 			"/project <name> - Switch to project\n" +
 			"/project delete <name> - Delete project\n" +
 			"/project clear - Clear current project\n\n" +
+			"**Display Options:**\n" +
+			"/verbose - Toggle tool usage display (On/Off)\n" +
+			"/stats - Toggle token stats display (On/Off)\n\n" +
 			"Just send me a message and I'll help you!", nil
 	}
 
@@ -109,6 +112,16 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 	if strings.HasPrefix(message, "/project") {
 		logger.Debug("Handling /project command directly (no LLM)")
 		return a.handleProjectCommand(chatID, message)
+	}
+
+	// Handle /verbose command
+	if message == "/verbose" {
+		return a.handleVerboseCommand(chatID)
+	}
+
+	// Handle /stats command
+	if message == "/stats" {
+		return a.handleStatsCommand(chatID)
 	}
 
 	// Get or create session for this chat
@@ -170,6 +183,7 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 	// Agent loop: handle tool calls iteratively
 	var finalResponse string
 	var totalPromptTokens, totalCompletionTokens, totalTokens int
+	var toolsUsed []string
 	for i := 0; i < maxToolIterations; i++ {
 		logger.Debug("Agent loop iteration %d/%d", i+1, maxToolIterations)
 
@@ -223,6 +237,9 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 				args = args[:200] + "..."
 			}
 			logger.Debug("Executing tool: %s with args: %s", toolCall.Function.Name, args)
+
+			// Track tool usage
+			toolsUsed = append(toolsUsed, toolCall.Function.Name)
 
 			result, err := a.tools.Execute(ctx, toolCall.Function.Name, toolCall.Function.Arguments)
 			if err != nil {
@@ -282,32 +299,50 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 		go a.consolidateSession(sessionKey)
 	}
 
-	// Append token usage and context window stats to final response
-	contextSize := len(sess.GetHistory(maxHistoryMessages))
+	// Append verbose tool usage if enabled
+	if sess.GetShowVerbose() && len(toolsUsed) > 0 {
+		// Remove duplicates and format tool list
+		uniqueTools := make(map[string]bool)
+		for _, tool := range toolsUsed {
+			uniqueTools[tool] = true
+		}
 
-	// Build stats string with token usage and context percentage
-	var tokenStats string
-	contextLength := a.modelManager.GetContextLength()
-	if contextLength > 0 {
-		// Calculate percentage of context window used
-		percentage := float64(totalPromptTokens) / float64(contextLength) * 100
-		tokenStats = fmt.Sprintf("\n📊 Tokens: %s prompt + %s completion = %s total\n| Context: %.1f%%\n| History: %d/%d msgs",
-			formatNumber(totalPromptTokens),
-			formatNumber(totalCompletionTokens),
-			formatNumber(totalTokens),
-			percentage,
-			contextSize,
-			maxHistoryMessages)
-	} else {
-		// Fallback if context length not available
-		tokenStats = fmt.Sprintf("\n📊 Tokens: %s prompt + %s completion = %s total\n| History: %d/%d msgs",
-			formatNumber(totalPromptTokens),
-			formatNumber(totalCompletionTokens),
-			formatNumber(totalTokens),
-			contextSize,
-			maxHistoryMessages)
+		var toolList []string
+		for tool := range uniqueTools {
+			toolList = append(toolList, fmt.Sprintf("`%s`", tool))
+		}
+
+		finalResponse += fmt.Sprintf("\n🔧 Tools used: %s", strings.Join(toolList, ", "))
 	}
-	finalResponse += tokenStats
+
+	// Append token usage and context window stats to final response if enabled
+	if sess.GetShowStats() {
+		contextSize := len(sess.GetHistory(maxHistoryMessages))
+
+		// Build stats string with token usage and context percentage
+		var tokenStats string
+		contextLength := a.modelManager.GetContextLength()
+		if contextLength > 0 {
+			// Calculate percentage of context window used
+			percentage := float64(totalPromptTokens) / float64(contextLength) * 100
+			tokenStats = fmt.Sprintf("\n📊 Tokens: %s prompt + %s completion = %s total\n| Context: %.1f%%\n| History: %d/%d msgs",
+				formatNumber(totalPromptTokens),
+				formatNumber(totalCompletionTokens),
+				formatNumber(totalTokens),
+				percentage,
+				contextSize,
+				maxHistoryMessages)
+		} else {
+			// Fallback if context length not available
+			tokenStats = fmt.Sprintf("\n📊 Tokens: %s prompt + %s completion = %s total\n| History: %d/%d msgs",
+				formatNumber(totalPromptTokens),
+				formatNumber(totalCompletionTokens),
+				formatNumber(totalTokens),
+				contextSize,
+				maxHistoryMessages)
+		}
+		finalResponse += tokenStats
+	}
 
 	return finalResponse, nil
 }
@@ -717,6 +752,96 @@ func (a *Agent) showProjectListText(currentProject string, projects []string) st
 	return response.String()
 }
 
+// handleVerboseCommand toggles verbose tool usage display
+func (a *Agent) handleVerboseCommand(chatID int64) (string, error) {
+	sess := a.sessions.GetOrCreate(chatID)
+	currentValue := sess.GetShowVerbose()
+	newValue := !currentValue
+
+	sess.SetShowVerbose(newValue)
+	if err := a.sessions.Save(sess); err != nil {
+		logger.Warn("Failed to save session after toggling verbose: %v", err)
+	}
+
+	status := "Off"
+	emoji := "🔕"
+	if newValue {
+		status = "On"
+		emoji = "🔔"
+	}
+
+	// Send response with inline keyboard
+	if a.keyboardSender != nil {
+		var keyboard [][]telegram.InlineButton
+
+		// Create toggle button
+		buttonText := fmt.Sprintf("Verbose: %s %s", status, emoji)
+		button := telegram.InlineButton{
+			Text:         buttonText,
+			CallbackData: "verbose:toggle",
+		}
+		keyboard = append(keyboard, []telegram.InlineButton{button})
+
+		message := fmt.Sprintf("%s **Verbose Mode: %s**\n\nTool usage will %sbe displayed after LLM responses.",
+			emoji, status, map[bool]string{true: "", false: "not "}[newValue])
+
+		if err := a.keyboardSender.SendMessageWithKeyboard(chatID, message, keyboard); err != nil {
+			logger.Warn("Failed to send keyboard, falling back to text: %v", err)
+			return message, nil
+		}
+		return "", nil
+	}
+
+	// Fallback: text-only response
+	return fmt.Sprintf("%s **Verbose Mode: %s**\n\nTool usage will %sbe displayed after LLM responses.",
+		emoji, status, map[bool]string{true: "", false: "not "}[newValue]), nil
+}
+
+// handleStatsCommand toggles token stats display
+func (a *Agent) handleStatsCommand(chatID int64) (string, error) {
+	sess := a.sessions.GetOrCreate(chatID)
+	currentValue := sess.GetShowStats()
+	newValue := !currentValue
+
+	sess.SetShowStats(newValue)
+	if err := a.sessions.Save(sess); err != nil {
+		logger.Warn("Failed to save session after toggling stats: %v", err)
+	}
+
+	status := "Off"
+	emoji := "🔕"
+	if newValue {
+		status = "On"
+		emoji = "📊"
+	}
+
+	// Send response with inline keyboard
+	if a.keyboardSender != nil {
+		var keyboard [][]telegram.InlineButton
+
+		// Create toggle button
+		buttonText := fmt.Sprintf("Stats: %s %s", status, emoji)
+		button := telegram.InlineButton{
+			Text:         buttonText,
+			CallbackData: "stats:toggle",
+		}
+		keyboard = append(keyboard, []telegram.InlineButton{button})
+
+		message := fmt.Sprintf("%s **Token Stats: %s**\n\nToken usage statistics will %sbe displayed after LLM responses.",
+			emoji, status, map[bool]string{true: "", false: "not "}[newValue])
+
+		if err := a.keyboardSender.SendMessageWithKeyboard(chatID, message, keyboard); err != nil {
+			logger.Warn("Failed to send keyboard, falling back to text: %v", err)
+			return message, nil
+		}
+		return "", nil
+	}
+
+	// Fallback: text-only response
+	return fmt.Sprintf("%s **Token Stats: %s**\n\nToken usage statistics will %sbe displayed after LLM responses.",
+		emoji, status, map[bool]string{true: "", false: "not "}[newValue]), nil
+}
+
 // parseModelNumber tries to parse a string as a positive integer
 func parseModelNumber(s string) int {
 	var num int
@@ -792,6 +917,14 @@ func (a *Agent) ProcessCallback(ctx context.Context, chatID int64, callbackData 
 	case "project":
 		// Handle project selection: "project:myproject" or "project:clear"
 		return a.handleProjectCallback(chatID, value)
+
+	case "verbose":
+		// Handle verbose toggle
+		return a.handleVerboseCallback(chatID)
+
+	case "stats":
+		// Handle stats toggle
+		return a.handleStatsCallback(chatID)
 
 	default:
 		return fmt.Sprintf("❌ Unknown callback command: %s", command), nil
@@ -878,4 +1011,50 @@ func (a *Agent) handleProjectCallback(chatID int64, value string) (string, error
 
 	logger.Info("Switched to project: %s (chat %d) via callback", projectName, chatID)
 	return fmt.Sprintf("✅ Switched to project `%s`\n\nProject memory loaded (%d bytes). All context is now project-specific.", projectName, len(projectMemory)), nil
+}
+
+// handleVerboseCallback handles verbose toggle from inline keyboard
+func (a *Agent) handleVerboseCallback(chatID int64) (string, error) {
+	sess := a.sessions.GetOrCreate(chatID)
+	currentValue := sess.GetShowVerbose()
+	newValue := !currentValue
+
+	sess.SetShowVerbose(newValue)
+	if err := a.sessions.Save(sess); err != nil {
+		logger.Warn("Failed to save session after toggling verbose: %v", err)
+	}
+
+	status := "Off"
+	emoji := "🔕"
+	if newValue {
+		status = "On"
+		emoji = "🔔"
+	}
+
+	logger.Info("Verbose mode toggled to %s for chat %d", status, chatID)
+	return fmt.Sprintf("%s **Verbose Mode: %s**\n\nTool usage will %sbe displayed after LLM responses.",
+		emoji, status, map[bool]string{true: "", false: "not "}[newValue]), nil
+}
+
+// handleStatsCallback handles stats toggle from inline keyboard
+func (a *Agent) handleStatsCallback(chatID int64) (string, error) {
+	sess := a.sessions.GetOrCreate(chatID)
+	currentValue := sess.GetShowStats()
+	newValue := !currentValue
+
+	sess.SetShowStats(newValue)
+	if err := a.sessions.Save(sess); err != nil {
+		logger.Warn("Failed to save session after toggling stats: %v", err)
+	}
+
+	status := "Off"
+	emoji := "🔕"
+	if newValue {
+		status = "On"
+		emoji = "📊"
+	}
+
+	logger.Info("Stats mode toggled to %s for chat %d", status, chatID)
+	return fmt.Sprintf("%s **Token Stats: %s**\n\nToken usage statistics will %sbe displayed after LLM responses.",
+		emoji, status, map[bool]string{true: "", false: "not "}[newValue]), nil
 }
