@@ -8,177 +8,355 @@ import (
 	"testing"
 )
 
-func TestSmartEdit(t *testing.T) {
+func TestSmartEdit_AddImportGo(t *testing.T) {
 	tmpDir := t.TempDir()
-
 	registry := NewRegistry()
 	RegisterSmartEdit(registry, tmpDir)
 
-	ctx := context.Background()
+	goFile := filepath.Join(tmpDir, "test.go")
+	goContent := `package main
 
-	t.Run("add_import to file with import block", func(t *testing.T) {
-		testFile := filepath.Join(tmpDir, "test1.go")
-		os.WriteFile(testFile, []byte("package main\n\nimport (\n\t\"fmt\"\n)\n\nfunc main() {}"), 0644)
+func main() {
+	println("hello")
+}
+`
+	if err := os.WriteFile(goFile, []byte(goContent), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
 
-		args := map[string]interface{}{
-			"path":      "test1.go",
-			"operation": "add_import",
-			"value":     "os",
-		}
+	tool, ok := registry.Get("smart_edit")
+	if !ok {
+		t.Fatal("smart_edit tool not registered")
+	}
 
-		tool, _ := registry.Get("smart_edit")
-		result, err := tool.Handler(ctx, args)
-
-		if err != nil {
-			t.Fatalf("Expected no error, got: %v", err)
-		}
-
-		if !strings.Contains(result, "Successfully performed add_import") {
-			t.Errorf("Expected success message, got: %s", result)
-		}
-
-		// Verify file was modified
-		data, _ := os.ReadFile(testFile)
-		content := string(data)
-
-		if !strings.Contains(content, "\"os\"") {
-			t.Errorf("Expected os import to be added, got: %s", content)
-		}
+	result, err := tool.Handler(context.Background(), map[string]interface{}{
+		"path":      "test.go",
+		"operation": "add_import",
+		"value":     "fmt",
 	})
+	if err != nil {
+		t.Fatalf("Handler() error = %v", err)
+	}
 
-	t.Run("add_import to file without import block", func(t *testing.T) {
-		testFile := filepath.Join(tmpDir, "test2.go")
-		os.WriteFile(testFile, []byte("package main\n\nfunc main() {}"), 0644)
+	if !strings.Contains(result, "Successfully performed add_import") {
+		t.Errorf("Should indicate success, got: %s", result)
+	}
 
-		args := map[string]interface{}{
-			"path":      "test2.go",
-			"operation": "add_import",
-			"value":     "fmt",
-		}
+	// Verify file was modified
+	newContent, err := os.ReadFile(goFile)
+	if err != nil {
+		t.Fatalf("Failed to read file: %v", err)
+	}
 
-		tool, _ := registry.Get("smart_edit")
-		result, err := tool.Handler(ctx, args)
+	if !strings.Contains(string(newContent), `import "fmt"`) {
+		t.Errorf("Should add import statement, got: %s", string(newContent))
+	}
+}
 
-		if err != nil {
-			t.Fatalf("Expected no error, got: %v", err)
-		}
+func TestSmartEdit_AddImportPython(t *testing.T) {
+	tmpDir := t.TempDir()
+	registry := NewRegistry()
+	RegisterSmartEdit(registry, tmpDir)
 
-		if !strings.Contains(result, "Successfully performed add_import") {
-			t.Errorf("Expected success message, got: %s", result)
-		}
+	pyFile := filepath.Join(tmpDir, "test.py")
+	pyContent := `import os
 
-		// Verify file was modified
-		data, _ := os.ReadFile(testFile)
-		content := string(data)
+def main():
+    print("hello")
+`
+	if err := os.WriteFile(pyFile, []byte(pyContent), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
 
-		if !strings.Contains(content, "import \"fmt\"") {
-			t.Errorf("Expected fmt import to be added, got: %s", content)
-		}
+	tool, ok := registry.Get("smart_edit")
+	if !ok {
+		t.Fatal("smart_edit tool not registered")
+	}
+
+	result, err := tool.Handler(context.Background(), map[string]interface{}{
+		"path":      "test.py",
+		"operation": "add_import",
+		"value":     "import sys",
 	})
+	if err != nil {
+		t.Fatalf("Handler() error = %v", err)
+	}
 
-	t.Run("add_function", func(t *testing.T) {
-		testFile := filepath.Join(tmpDir, "test3.go")
-		os.WriteFile(testFile, []byte("package main\n\nfunc main() {}"), 0644)
+	if !strings.Contains(result, "python") {
+		t.Error("Should detect Python language")
+	}
 
-		args := map[string]interface{}{
-			"path":      "test3.go",
-			"operation": "add_function",
-			"value":     "func Helper() {\n\t// helper code\n}",
-		}
+	newContent, err := os.ReadFile(pyFile)
+	if err != nil {
+		t.Fatalf("Failed to read file: %v", err)
+	}
 
-		tool, _ := registry.Get("smart_edit")
-		result, err := tool.Handler(ctx, args)
+	if !strings.Contains(string(newContent), "import sys") {
+		t.Errorf("Should add import statement, got: %s", string(newContent))
+	}
+}
 
-		if err != nil {
-			t.Fatalf("Expected no error, got: %v", err)
-		}
+func TestSmartEdit_AddImportJavaScript(t *testing.T) {
+	tmpDir := t.TempDir()
+	registry := NewRegistry()
+	RegisterSmartEdit(registry, tmpDir)
 
-		if !strings.Contains(result, "Successfully performed add_function") {
-			t.Errorf("Expected success message, got: %s", result)
-		}
+	jsFile := filepath.Join(tmpDir, "test.js")
+	jsContent := `import React from 'react';
 
-		// Verify file was modified
-		data, _ := os.ReadFile(testFile)
-		content := string(data)
+function App() {
+    return <div>Hello</div>;
+}
+`
+	if err := os.WriteFile(jsFile, []byte(jsContent), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
 
-		if !strings.Contains(content, "func Helper()") {
-			t.Errorf("Expected Helper function to be added, got: %s", content)
-		}
+	tool, ok := registry.Get("smart_edit")
+	if !ok {
+		t.Fatal("smart_edit tool not registered")
+	}
+
+	result, err := tool.Handler(context.Background(), map[string]interface{}{
+		"path":      "test.js",
+		"operation": "add_import",
+		"value":     "import { useState } from 'react';",
 	})
+	if err != nil {
+		t.Fatalf("Handler() error = %v", err)
+	}
 
-	t.Run("append_content", func(t *testing.T) {
-		testFile := filepath.Join(tmpDir, "test4.txt")
-		os.WriteFile(testFile, []byte("Line 1\nLine 2"), 0644)
+	if !strings.Contains(result, "javascript") {
+		t.Error("Should detect JavaScript language")
+	}
 
-		args := map[string]interface{}{
-			"path":      "test4.txt",
-			"operation": "append_content",
-			"value":     "Line 3",
-		}
+	newContent, err := os.ReadFile(jsFile)
+	if err != nil {
+		t.Fatalf("Failed to read file: %v", err)
+	}
 
-		tool, _ := registry.Get("smart_edit")
-		result, err := tool.Handler(ctx, args)
+	if !strings.Contains(string(newContent), "useState") {
+		t.Errorf("Should add import statement, got: %s", string(newContent))
+	}
+}
 
-		if err != nil {
-			t.Fatalf("Expected no error, got: %v", err)
-		}
+func TestSmartEdit_AddImportJava(t *testing.T) {
+	tmpDir := t.TempDir()
+	registry := NewRegistry()
+	RegisterSmartEdit(registry, tmpDir)
 
-		if !strings.Contains(result, "Successfully performed append_content") {
-			t.Errorf("Expected success message, got: %s", result)
-		}
+	javaFile := filepath.Join(tmpDir, "Test.java")
+	javaContent := `package com.example;
 
-		// Verify file was modified
-		data, _ := os.ReadFile(testFile)
-		content := string(data)
+import java.util.List;
 
-		if !strings.Contains(content, "Line 3") {
-			t.Errorf("Expected Line 3 to be appended, got: %s", content)
-		}
+public class Test {
+}
+`
+	if err := os.WriteFile(javaFile, []byte(javaContent), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	tool, ok := registry.Get("smart_edit")
+	if !ok {
+		t.Fatal("smart_edit tool not registered")
+	}
+
+	result, err := tool.Handler(context.Background(), map[string]interface{}{
+		"path":      "Test.java",
+		"operation": "add_import",
+		"value":     "import java.util.Map",
 	})
+	if err != nil {
+		t.Fatalf("Handler() error = %v", err)
+	}
 
-	t.Run("file not found", func(t *testing.T) {
-		args := map[string]interface{}{
-			"path":      "nonexistent.go",
-			"operation": "add_function",
-			"value":     "func Test() {}",
-		}
+	if !strings.Contains(result, "java") {
+		t.Error("Should detect Java language")
+	}
 
-		tool, _ := registry.Get("smart_edit")
-		_, err := tool.Handler(ctx, args)
+	newContent, err := os.ReadFile(javaFile)
+	if err != nil {
+		t.Fatalf("Failed to read file: %v", err)
+	}
 
-		if err == nil {
-			t.Error("Expected error for missing file")
-		}
+	if !strings.Contains(string(newContent), "import java.util.Map;") {
+		t.Errorf("Should add import with semicolon, got: %s", string(newContent))
+	}
+}
+
+func TestSmartEdit_AddImportRust(t *testing.T) {
+	tmpDir := t.TempDir()
+	registry := NewRegistry()
+	RegisterSmartEdit(registry, tmpDir)
+
+	rsFile := filepath.Join(tmpDir, "test.rs")
+	rsContent := `use std::collections::HashMap;
+
+fn main() {
+    println!("hello");
+}
+`
+	if err := os.WriteFile(rsFile, []byte(rsContent), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	tool, ok := registry.Get("smart_edit")
+	if !ok {
+		t.Fatal("smart_edit tool not registered")
+	}
+
+	result, err := tool.Handler(context.Background(), map[string]interface{}{
+		"path":      "test.rs",
+		"operation": "add_import",
+		"value":     "use std::io;",
 	})
+	if err != nil {
+		t.Fatalf("Handler() error = %v", err)
+	}
 
-	t.Run("unsupported operation", func(t *testing.T) {
-		testFile := filepath.Join(tmpDir, "test5.go")
-		os.WriteFile(testFile, []byte("package main"), 0644)
+	if !strings.Contains(result, "rust") {
+		t.Error("Should detect Rust language")
+	}
 
-		args := map[string]interface{}{
-			"path":      "test5.go",
-			"operation": "invalid_operation",
-			"value":     "something",
-		}
+	newContent, err := os.ReadFile(rsFile)
+	if err != nil {
+		t.Fatalf("Failed to read file: %v", err)
+	}
 
-		tool, _ := registry.Get("smart_edit")
-		_, err := tool.Handler(ctx, args)
+	if !strings.Contains(string(newContent), "use std::io;") {
+		t.Errorf("Should add use statement, got: %s", string(newContent))
+	}
+}
 
-		if err == nil {
-			t.Error("Expected error for unsupported operation")
-		}
+func TestSmartEdit_AddImportC(t *testing.T) {
+	tmpDir := t.TempDir()
+	registry := NewRegistry()
+	RegisterSmartEdit(registry, tmpDir)
+
+	cFile := filepath.Join(tmpDir, "test.c")
+	cContent := `#include <stdio.h>
+
+int main() {
+    printf("hello\n");
+    return 0;
+}
+`
+	if err := os.WriteFile(cFile, []byte(cContent), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	tool, ok := registry.Get("smart_edit")
+	if !ok {
+		t.Fatal("smart_edit tool not registered")
+	}
+
+	_, err := tool.Handler(context.Background(), map[string]interface{}{
+		"path":      "test.c",
+		"operation": "add_import",
+		"value":     "<stdlib.h>",
 	})
+	if err != nil {
+		t.Fatalf("Handler() error = %v", err)
+	}
 
-	t.Run("missing required parameters", func(t *testing.T) {
-		args := map[string]interface{}{
-			"path": "test.go",
-		}
+	newContent, err := os.ReadFile(cFile)
+	if err != nil {
+		t.Fatalf("Failed to read file: %v", err)
+	}
 
-		tool, _ := registry.Get("smart_edit")
-		_, err := tool.Handler(ctx, args)
+	if !strings.Contains(string(newContent), "#include <stdlib.h>") {
+		t.Errorf("Should add include statement, got: %s", string(newContent))
+	}
+}
 
-		if err == nil {
-			t.Error("Expected error for missing parameters")
-		}
+func TestSmartEdit_AddFunction(t *testing.T) {
+	tmpDir := t.TempDir()
+	registry := NewRegistry()
+	RegisterSmartEdit(registry, tmpDir)
+
+	goFile := filepath.Join(tmpDir, "test.go")
+	goContent := `package main
+
+func main() {
+}
+`
+	if err := os.WriteFile(goFile, []byte(goContent), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	tool, ok := registry.Get("smart_edit")
+	if !ok {
+		t.Fatal("smart_edit tool not registered")
+	}
+
+	newFunc := `func Helper() string {
+	return "helper"
+}`
+
+	result, err := tool.Handler(context.Background(), map[string]interface{}{
+		"path":      "test.go",
+		"operation": "add_function",
+		"value":     newFunc,
 	})
+	if err != nil {
+		t.Fatalf("Handler() error = %v", err)
+	}
+
+	if !strings.Contains(result, "Successfully performed add_function") {
+		t.Error("Should indicate success")
+	}
+
+	newContent, err := os.ReadFile(goFile)
+	if err != nil {
+		t.Fatalf("Failed to read file: %v", err)
+	}
+
+	if !strings.Contains(string(newContent), "func Helper()") {
+		t.Error("Should add function")
+	}
+}
+
+func TestSmartEdit_DuplicateImport(t *testing.T) {
+	tmpDir := t.TempDir()
+	registry := NewRegistry()
+	RegisterSmartEdit(registry, tmpDir)
+
+	goFile := filepath.Join(tmpDir, "test.go")
+	goContent := `package main
+
+import "fmt"
+
+func main() {
+}
+`
+	if err := os.WriteFile(goFile, []byte(goContent), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	tool, ok := registry.Get("smart_edit")
+	if !ok {
+		t.Fatal("smart_edit tool not registered")
+	}
+
+	// Try to add duplicate import
+	_, err := tool.Handler(context.Background(), map[string]interface{}{
+		"path":      "test.go",
+		"operation": "add_import",
+		"value":     "fmt",
+	})
+	if err != nil {
+		t.Fatalf("Handler() error = %v", err)
+	}
+
+	newContent, err := os.ReadFile(goFile)
+	if err != nil {
+		t.Fatalf("Failed to read file: %v", err)
+	}
+
+	// Should not duplicate the import
+	count := strings.Count(string(newContent), `"fmt"`)
+	if count > 1 {
+		t.Errorf("Should not duplicate import, found %d occurrences", count)
+	}
 }

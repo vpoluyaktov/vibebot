@@ -107,6 +107,13 @@ func runGateway() {
 	tools.RegisterSmartEdit(toolRegistry, cfg.WorkspaceDir)
 	tools.RegisterTestAndFix(toolRegistry, cfg.WorkspaceDir)
 
+	// Register token-saving tools
+	tools.RegisterFileSummary(toolRegistry, cfg.WorkspaceDir)
+	tools.RegisterFileOutline(toolRegistry, cfg.WorkspaceDir)
+	tools.RegisterSymbolDefinition(toolRegistry, cfg.WorkspaceDir)
+	tools.RegisterCachedGrep(toolRegistry, cfg.WorkspaceDir)
+	tools.RegisterIncrementalEdit(toolRegistry, cfg.WorkspaceDir)
+
 	// Initialize agent
 	ag := agent.New(provider, mem, toolRegistry, sessionMgr, modelMgr, cfg.WorkspaceDir)
 
