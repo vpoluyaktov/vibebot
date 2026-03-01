@@ -12,6 +12,7 @@ import (
 	"github.com/vpoluyaktov/vibebot/internal/memory"
 	"github.com/vpoluyaktov/vibebot/internal/modelmanager"
 	"github.com/vpoluyaktov/vibebot/internal/session"
+	"github.com/vpoluyaktov/vibebot/internal/telegram"
 	"github.com/vpoluyaktov/vibebot/internal/tools"
 )
 
@@ -23,6 +24,11 @@ const maxHistoryMessages = 50      // Maximum messages to include in context
 const consolidationThreshold = 100 // Trigger consolidation when session exceeds this
 const consolidationBatchSize = 50  // How many old messages to consolidate at once
 
+// KeyboardSender is an interface for sending messages with inline keyboards
+type KeyboardSender interface {
+	SendMessageWithKeyboard(chatID int64, text string, keyboard [][]telegram.InlineButton) error
+}
+
 // Agent coordinates the AI assistant behavior
 type Agent struct {
 	llm              llm.Provider
@@ -32,6 +38,7 @@ type Agent struct {
 	modelManager     *modelmanager.Manager
 	consolidator     *consolidation.Consolidator
 	progressCallback ProgressCallback
+	keyboardSender   KeyboardSender
 	workspacePath    string
 }
 
@@ -54,13 +61,18 @@ func (a *Agent) SetProgressCallback(callback ProgressCallback) {
 	a.progressCallback = callback
 }
 
+// SetKeyboardSender sets the keyboard sender for inline keyboards
+func (a *Agent) SetKeyboardSender(sender KeyboardSender) {
+	a.keyboardSender = sender
+}
+
 // ProcessMessage handles an incoming message and generates a response
 func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string) (string, error) {
 	// Add chat_id to context for tools
 	ctx = context.WithValue(ctx, "chat_id", chatID)
 
 	// Handle commands
-	if message == "/new" || message == "/start" {
+	if message == "/new" {
 		sess := a.sessions.GetOrCreate(chatID)
 		sess.Clear()
 		if err := a.sessions.Save(sess); err != nil {
@@ -76,12 +88,11 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 			"/stop - Stop processing and clear queue\n" +
 			"/help - Show this help message\n\n" +
 			"**Model Management:**\n" +
-			"/model - Show current LLM model\n" +
-			"/model list - List all available models\n" +
+			"/model - Show available models with buttons to switch\n" +
 			"/model <number> - Switch by number\n" +
 			"/model <partial-name> - Switch by name\n\n" +
 			"**Project Management:**\n" +
-			"/projects - List all projects\n" +
+			"/project - Show projects with buttons to switch/create/clear\n" +
 			"/project create <name> - Create new project\n" +
 			"/project <name> - Switch to project\n" +
 			"/project delete <name> - Delete project\n" +
@@ -91,13 +102,7 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 
 	// Handle /model command
 	if strings.HasPrefix(message, "/model") {
-		return a.handleModelCommand(message)
-	}
-
-	// Handle /projects command
-	if message == "/projects" {
-		logger.Debug("Handling /projects command directly (no LLM)")
-		return a.handleProjectsCommand(chatID)
+		return a.handleModelCommand(chatID, message)
 	}
 
 	// Handle /project command
@@ -387,27 +392,56 @@ func (a *Agent) consolidateSession(sessionKey string) {
 }
 
 // handleModelCommand processes /model commands
-func (a *Agent) handleModelCommand(message string) (string, error) {
+func (a *Agent) handleModelCommand(chatID int64, message string) (string, error) {
 	parts := strings.Fields(message)
 
-	// /model or /model list - show all models
+	// /model or /model list - show all models with inline keyboard
 	if len(parts) == 1 || (len(parts) == 2 && parts[1] == "list") {
 		current := a.modelManager.GetCurrent()
 		allowed := a.modelManager.GetAllowed()
 
-		var response strings.Builder
-		response.WriteString("🤖 **Available Models**\n\n")
+		// If keyboard sender is available, send inline keyboard
+		if a.keyboardSender != nil {
+			var response strings.Builder
+			response.WriteString("🤖 **Available Models**\n\n")
+			response.WriteString(fmt.Sprintf("Current: `%s`\n\n", current))
+			response.WriteString("Select a model:")
 
-		for i, model := range allowed {
-			if model == current {
-				response.WriteString(fmt.Sprintf("%d. `%s` ✅\n", i+1, model))
-			} else {
-				response.WriteString(fmt.Sprintf("%d. `%s`\n", i+1, model))
+			// Build inline keyboard (max 8 buttons per row for readability)
+			var keyboard [][]telegram.InlineButton
+			for i, model := range allowed {
+				// Extract short name from model (e.g., "claude-3.5-sonnet" from full path)
+				shortName := model
+				if lastSlash := strings.LastIndex(model, "/"); lastSlash != -1 {
+					shortName = model[lastSlash+1:]
+				}
+
+				// Add checkmark for current model
+				buttonText := fmt.Sprintf("%d. %s", i+1, shortName)
+				if model == current {
+					buttonText += " ✅"
+				}
+
+				// Create callback data with model index
+				button := telegram.InlineButton{
+					Text:         buttonText,
+					CallbackData: fmt.Sprintf("model:%d", i+1),
+				}
+
+				// Add button to keyboard (one per row for clarity)
+				keyboard = append(keyboard, []telegram.InlineButton{button})
 			}
+
+			if err := a.keyboardSender.SendMessageWithKeyboard(chatID, response.String(), keyboard); err != nil {
+				logger.Warn("Failed to send keyboard, falling back to text: %v", err)
+				// Fall back to text-only response
+				return a.handleModelCommandText(current, allowed), nil
+			}
+			return "", nil // Message already sent via keyboard
 		}
 
-		response.WriteString("\n💡 Use `/model <number>` or `/model <partial-name>` to switch")
-		return response.String(), nil
+		// Fallback: text-only response
+		return a.handleModelCommandText(current, allowed), nil
 	}
 
 	// /model <number or partial name> - switch model
@@ -457,52 +491,30 @@ func (a *Agent) handleModelCommand(message string) (string, error) {
 	return "❌ Invalid command. Use `/model list` or `/model <number|name>`", nil
 }
 
-// handleProjectsCommand lists all available projects
-func (a *Agent) handleProjectsCommand(chatID int64) (string, error) {
-	// Get current project from session
-	sess := a.sessions.GetOrCreate(chatID)
-	currentProject := sess.GetProject()
-
-	// List all projects using memory manager
-	projects, err := a.memory.ListProjects()
-	if err != nil {
-		return fmt.Sprintf("❌ Error reading projects: %v", err), nil
-	}
-
-	if len(projects) == 0 {
-		return "📂 **Projects**\n\nNo projects found. Use `/project create <name>` to create one.", nil
-	}
-
+// handleModelCommandText returns text-only model list (fallback)
+func (a *Agent) handleModelCommandText(current string, allowed []string) string {
 	var response strings.Builder
-	response.WriteString(fmt.Sprintf("📂 **Projects** (%d total)\n\n", len(projects)))
+	response.WriteString("🤖 **Available Models**\n\n")
 
-	for _, project := range projects {
-		if project == currentProject {
-			response.WriteString(fmt.Sprintf("✅ `%s` (current)\n", project))
+	for i, model := range allowed {
+		if model == current {
+			response.WriteString(fmt.Sprintf("%d. `%s` ✅\n", i+1, model))
 		} else {
-			response.WriteString(fmt.Sprintf("   `%s`\n", project))
+			response.WriteString(fmt.Sprintf("%d. `%s`\n", i+1, model))
 		}
 	}
 
-	response.WriteString("\n💡 Use `/project <name>` to switch")
-	if currentProject != "" {
-		response.WriteString("\n💡 Use `/project clear` to clear current project")
-	}
-	response.WriteString("\n💡 Use `/project create <name>` to create new")
-	return response.String(), nil
+	response.WriteString("\n💡 Use `/model <number>` or `/model <partial-name>` to switch")
+	return response.String()
 }
 
 // handleProjectCommand manages project creation, switching, and deletion
 func (a *Agent) handleProjectCommand(chatID int64, message string) (string, error) {
 	parts := strings.Fields(message)
 
-	if len(parts) < 2 {
-		return "❌ Usage:\n" +
-			"- `/project create <name>` - Create a new project\n" +
-			"- `/project <name>` - Switch to a project\n" +
-			"- `/project delete <name>` - Delete a project\n" +
-			"- `/project clear` - Clear current project\n" +
-			"- `/projects` - List all projects", nil
+	// /project without arguments - show project list with keyboard
+	if len(parts) == 1 {
+		return a.showProjectList(chatID)
 	}
 
 	sess := a.sessions.GetOrCreate(chatID)
@@ -609,6 +621,102 @@ func (a *Agent) handleProjectCommand(chatID int64, message string) (string, erro
 	return fmt.Sprintf("✅ Switched to project `%s`\n\nProject memory loaded (%d bytes). All context is now project-specific.", projectName, len(projectMemory)), nil
 }
 
+// showProjectList displays project list with inline keyboard
+func (a *Agent) showProjectList(chatID int64) (string, error) {
+	// Get current project from session
+	sess := a.sessions.GetOrCreate(chatID)
+	currentProject := sess.GetProject()
+
+	// List all projects using memory manager
+	projects, err := a.memory.ListProjects()
+	if err != nil {
+		return fmt.Sprintf("❌ Error reading projects: %v", err), nil
+	}
+
+	// If keyboard sender is available, send inline keyboard
+	if a.keyboardSender != nil {
+		var response strings.Builder
+		response.WriteString("📂 **Project Management**\n\n")
+		if currentProject != "" {
+			response.WriteString(fmt.Sprintf("Current: `%s`\n\n", currentProject))
+		}
+		if len(projects) > 0 {
+			response.WriteString(fmt.Sprintf("Projects (%d):", len(projects)))
+		} else {
+			response.WriteString("No projects yet. Create one to get started!")
+		}
+
+		// Build inline keyboard
+		var keyboard [][]telegram.InlineButton
+
+		// Add project buttons
+		for _, project := range projects {
+			buttonText := project
+			if project == currentProject {
+				buttonText += " ✅"
+			}
+
+			button := telegram.InlineButton{
+				Text:         buttonText,
+				CallbackData: fmt.Sprintf("project:%s", project),
+			}
+			keyboard = append(keyboard, []telegram.InlineButton{button})
+		}
+
+		// Add "Create New Project" button
+		keyboard = append(keyboard, []telegram.InlineButton{{
+			Text:         "➕ Create New Project",
+			CallbackData: "project:create",
+		}})
+
+		// Add "Clear" button if there's a current project
+		if currentProject != "" {
+			keyboard = append(keyboard, []telegram.InlineButton{{
+				Text:         "🔄 Clear Current Project",
+				CallbackData: "project:clear",
+			}})
+		}
+
+		if err := a.keyboardSender.SendMessageWithKeyboard(chatID, response.String(), keyboard); err != nil {
+			logger.Warn("Failed to send keyboard, falling back to text: %v", err)
+			// Fall back to text-only response
+			return a.showProjectListText(currentProject, projects), nil
+		}
+		return "", nil // Message already sent via keyboard
+	}
+
+	// Fallback: text-only response
+	return a.showProjectListText(currentProject, projects), nil
+}
+
+// showProjectListText returns text-only project list (fallback)
+func (a *Agent) showProjectListText(currentProject string, projects []string) string {
+	var response strings.Builder
+	response.WriteString("📂 **Project Management**\n\n")
+
+	if len(projects) == 0 {
+		response.WriteString("No projects found. Use `/project create <name>` to create one.")
+		return response.String()
+	}
+
+	response.WriteString(fmt.Sprintf("Projects (%d total):\n\n", len(projects)))
+
+	for _, project := range projects {
+		if project == currentProject {
+			response.WriteString(fmt.Sprintf("✅ `%s` (current)\n", project))
+		} else {
+			response.WriteString(fmt.Sprintf("   `%s`\n", project))
+		}
+	}
+
+	response.WriteString("\n💡 Use `/project <name>` to switch")
+	if currentProject != "" {
+		response.WriteString("\n💡 Use `/project clear` to clear current project")
+	}
+	response.WriteString("\n💡 Use `/project create <name>` to create new")
+	return response.String()
+}
+
 // parseModelNumber tries to parse a string as a positive integer
 func parseModelNumber(s string) int {
 	var num int
@@ -661,6 +769,115 @@ func cleanXMLArtifacts(content string) string {
 	}
 
 	return strings.TrimSpace(content)
+}
+
+// ProcessCallback handles callback queries from inline keyboards
+func (a *Agent) ProcessCallback(ctx context.Context, chatID int64, callbackData string) (string, error) {
+	logger.Debug("Processing callback: %s", callbackData)
+
+	// Parse callback data format: "command:value"
+	parts := strings.SplitN(callbackData, ":", 2)
+	if len(parts) != 2 {
+		return "❌ Invalid callback data", nil
+	}
+
+	command := parts[0]
+	value := parts[1]
+
+	switch command {
+	case "model":
+		// Handle model selection: "model:1", "model:2", etc.
+		return a.handleModelCallback(value)
+
+	case "project":
+		// Handle project selection: "project:myproject" or "project:clear"
+		return a.handleProjectCallback(chatID, value)
+
+	default:
+		return fmt.Sprintf("❌ Unknown callback command: %s", command), nil
+	}
+}
+
+// handleModelCallback handles model selection from inline keyboard
+func (a *Agent) handleModelCallback(value string) (string, error) {
+	allowed := a.modelManager.GetAllowed()
+
+	// Parse model number
+	var modelNum int
+	if _, err := fmt.Sscanf(value, "%d", &modelNum); err != nil || modelNum < 1 || modelNum > len(allowed) {
+		return fmt.Sprintf("❌ Invalid model number: %s", value), nil
+	}
+
+	selectedModel := allowed[modelNum-1]
+
+	if err := a.modelManager.SetCurrent(selectedModel); err != nil {
+		return fmt.Sprintf("❌ Error: %v", err), nil
+	}
+
+	// Update the LLM provider with the new model
+	if openRouter, ok := a.llm.(*llm.OpenRouter); ok {
+		openRouter.SetModel(selectedModel)
+	}
+
+	logger.Info("Model switched to: %s (via callback)", selectedModel)
+	return fmt.Sprintf("✅ Model switched to `%s`", selectedModel), nil
+}
+
+// handleProjectCallback handles project selection from inline keyboard
+func (a *Agent) handleProjectCallback(chatID int64, value string) (string, error) {
+	sess := a.sessions.GetOrCreate(chatID)
+
+	// Handle "create" command - prompt for project name
+	if value == "create" {
+		return "➕ **Create New Project**\n\n" +
+			"Please send the project name.\n\n" +
+			"Example: `/project create myproject`\n\n" +
+			"_Project names must be alphanumeric with optional hyphens/underscores._", nil
+	}
+
+	// Handle "clear" command
+	if value == "clear" {
+		currentProject := sess.GetProject()
+		if currentProject == "" {
+			return "ℹ️ No active project. Already using global context only.", nil
+		}
+
+		sess.ClearProject()
+		if err := a.sessions.Save(sess); err != nil {
+			logger.Warn("Failed to save session after clearing project: %v", err)
+		}
+
+		logger.Info("Cleared project context for chat %d (was: %s) via callback", chatID, currentProject)
+		return fmt.Sprintf("✅ Cleared project `%s`\n\nNow using global context only.", currentProject), nil
+	}
+
+	// Handle project switch
+	projectName := value
+
+	// Validate project name
+	if err := a.memory.ValidateProjectName(projectName); err != nil {
+		return fmt.Sprintf("❌ Invalid project name: %v", err), nil
+	}
+
+	// Check if project exists
+	if !a.memory.ProjectExists(projectName) {
+		return fmt.Sprintf("❌ Project `%s` does not exist!", projectName), nil
+	}
+
+	// Load project memory to verify it's readable
+	projectMemory, err := a.memory.LoadProjectMemory(projectName)
+	if err != nil {
+		return fmt.Sprintf("❌ Error loading project: %v", err), nil
+	}
+
+	// Switch to project
+	sess.SetProject(projectName)
+	if err := a.sessions.Save(sess); err != nil {
+		logger.Warn("Failed to save session after switching project: %v", err)
+	}
+
+	logger.Info("Switched to project: %s (chat %d) via callback", projectName, chatID)
+	return fmt.Sprintf("✅ Switched to project `%s`\n\nProject memory loaded (%d bytes). All context is now project-specific.", projectName, len(projectMemory)), nil
 }
 
 // formatToolHint formats tool calls as concise hints like: read_file("config.py"), exec("ls -la")
