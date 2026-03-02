@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/vpoluyaktov/vibebot/internal/tasks"
 
@@ -358,6 +359,9 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 	var creditDiff float64
 	var creditsAvailable bool
 	if openRouter, ok := a.llm.(*llm.OpenRouter); ok {
+		// Wait briefly for OpenRouter's balance to update
+		time.Sleep(1 * time.Second)
+
 		if credits, err := openRouter.FetchCredits(ctx); err == nil {
 			currentCredits = credits
 			creditDiff = previousCredits - currentCredits
