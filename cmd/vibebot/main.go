@@ -1,12 +1,13 @@
 package main
 
 import (
-	"github.com/vpoluyaktov/vibebot/internal/tasks"
 	"context"
 	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/vpoluyaktov/vibebot/internal/tasks"
 
 	"github.com/vpoluyaktov/vibebot/internal/agent"
 	"github.com/vpoluyaktov/vibebot/internal/config"
@@ -124,6 +125,12 @@ func runGateway() {
 	tools.RegisterSymbolDefinition(toolRegistry, cfg.WorkspaceDir)
 	tools.RegisterCachedGrep(toolRegistry, cfg.WorkspaceDir)
 	tools.RegisterIncrementalEdit(toolRegistry, cfg.WorkspaceDir)
+
+	// Initialize memory consolidator
+	memConsolidator := memory.NewConsolidator(mem, provider)
+
+	// Register memory consolidation tool
+	toolRegistry.Register("consolidate_project_memory", tools.ConsolidateMemoryTool(memConsolidator))
 
 	// Register timer tool BEFORE agent creation (needs telegram gateway and task manager)
 	tools.RegisterTimerTool(toolRegistry, tg, taskMgr)
