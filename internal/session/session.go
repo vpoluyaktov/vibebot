@@ -333,3 +333,29 @@ func (s *Session) GetShowStats() bool {
 
 	return s.ShowStats
 }
+
+// GetAllChatIDs returns all chat IDs that have sessions
+func (m *Manager) GetAllChatIDs() ([]int64, error) {
+	files, err := os.ReadDir(m.sessionsDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read sessions directory: %w", err)
+	}
+
+	chatIDs := []int64{}
+	for _, file := range files {
+		if file.IsDir() {
+			continue
+		}
+
+		// Parse filename: telegram:<chatID>.json
+		name := file.Name()
+		if len(name) > 9 && name[:9] == "telegram:" {
+			var chatID int64
+			if _, err := fmt.Sscanf(name, "telegram:%d.json", &chatID); err == nil {
+				chatIDs = append(chatIDs, chatID)
+			}
+		}
+	}
+
+	return chatIDs, nil
+}
