@@ -347,15 +347,16 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 		var tokenStats string
 		contextLength := a.modelManager.GetContextLength()
 		
-		// Format credits display
+		// Format credits display - always show credit info
 		creditsStr := ""
-		if totalCredits > 0 {
-			if totalCredits >= 0.01 {
-				creditsStr = fmt.Sprintf("\n| Credits: $%.4f", totalCredits)
-			} else {
-				// For very small amounts, use scientific notation
-				creditsStr = fmt.Sprintf("\n| Credits: $%.6f", totalCredits)
-			}
+		if totalCredits >= 0.01 {
+			creditsStr = fmt.Sprintf("\n| Credits: $%.4f", totalCredits)
+		} else if totalCredits > 0 {
+			// For very small amounts, use more precision
+			creditsStr = fmt.Sprintf("\n| Credits: $%.6f", totalCredits)
+		} else {
+			// Show $0 to indicate credit tracking is available
+			creditsStr = "\n| Credits: $0.000000"
 		}
 		
 		if contextLength > 0 {

@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/vpoluyaktov/vibebot/internal/logger"
 )
 
 const (
@@ -140,13 +142,19 @@ func (o *OpenRouter) Chat(ctx context.Context, messages []Message, tools []Tool)
 	// Extract credit usage from X-OpenRouter-Usage header
 	var credits float64
 	if usageHeader := resp.Header.Get("X-OpenRouter-Usage"); usageHeader != "" {
+		logger.Debug("X-OpenRouter-Usage header: %s", usageHeader)
 		// Parse JSON header: {"credits": 0.0015}
 		var usageData struct {
 			Credits float64 `json:"credits"`
 		}
 		if err := json.Unmarshal([]byte(usageHeader), &usageData); err == nil {
 			credits = usageData.Credits
+			logger.Debug("Parsed credits from header: $%.6f", credits)
+		} else {
+			logger.Warn("Failed to parse X-OpenRouter-Usage header: %v", err)
 		}
+	} else {
+		logger.Debug("No X-OpenRouter-Usage header found in response")
 	}
 
 	if resp.StatusCode != http.StatusOK {
