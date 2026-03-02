@@ -17,7 +17,7 @@ func RegisterDiffPreview(registry *Registry, workspaceDir string) {
 			Type: "function",
 			Function: llm.Function{
 				Name:        "diff_preview",
-				Description: "Preview what changes would look like before applying them. Helps verify edits are correct without executing them.",
+				Description: "Preview changes before applying them.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{

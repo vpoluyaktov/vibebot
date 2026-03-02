@@ -22,7 +22,7 @@ func RegisterBatchTools(registry *Registry) {
 			Type: "function",
 			Function: llm.Function{
 				Name:        "batch_tools",
-				Description: "Execute multiple tool calls in a single request. Reduces LLM round-trips for multi-step operations. Use this when you need to perform multiple consecutive operations (e.g., edit multiple files, read and write, etc.).",
+				Description: "Execute multiple tool calls in a single request for multi-step operations.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{

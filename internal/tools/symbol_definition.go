@@ -18,7 +18,7 @@ func RegisterSymbolDefinition(registry *Registry, workspaceDir string) {
 			Type: "function",
 			Function: llm.Function{
 				Name:        "symbol_definition",
-				Description: "Find the exact definition of a symbol (function, class, method, type) in the codebase. Returns only the definition block with line numbers, not the entire file. Saves tokens by returning targeted results. Supports Go, Python, JavaScript, TypeScript, Java, C, C++, Rust.",
+				Description: "Find exact definition of a symbol (function, class, method, type). Returns only the definition block with line numbers.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -122,13 +122,13 @@ func RegisterSymbolDefinition(registry *Registry, workspaceDir string) {
 				output.WriteString(fmt.Sprintf("[%d] %s:%d-%d\n", i+1, result.FilePath, result.Symbol.StartLine, result.Symbol.EndLine))
 				output.WriteString(fmt.Sprintf("Type: %s\n", result.Symbol.Type))
 				output.WriteString(fmt.Sprintf("Signature: %s\n", result.Symbol.Signature))
-				
+
 				if includeBody {
 					output.WriteString("\nDefinition:\n")
 					definition := extractDefinition(result.Content, result.Symbol.StartLine, result.Symbol.EndLine)
 					output.WriteString(definition)
 				}
-				
+
 				output.WriteString("\n---\n")
 			}
 
@@ -146,22 +146,22 @@ type SymbolResult struct {
 
 func extractDefinition(content []byte, startLine, endLine uint32) string {
 	lines := strings.Split(string(content), "\n")
-	
+
 	// Adjust for 1-indexed line numbers
 	start := int(startLine) - 1
 	end := int(endLine)
-	
+
 	if start < 0 {
 		start = 0
 	}
 	if end > len(lines) {
 		end = len(lines)
 	}
-	
+
 	var result strings.Builder
 	for i := start; i < end; i++ {
 		result.WriteString(fmt.Sprintf("%4d | %s\n", i+1, lines[i]))
 	}
-	
+
 	return result.String()
 }

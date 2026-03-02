@@ -18,7 +18,7 @@ func RegisterMultiFileRead(registry *Registry, workspaceDir string) {
 			Type: "function",
 			Function: llm.Function{
 				Name:        "multi_file_read",
-				Description: "Read multiple files in a single request. More efficient than calling read_file multiple times. Returns structured results with file paths and contents.",
+				Description: "Read multiple files in a single request. Returns structured results with file paths and contents.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{

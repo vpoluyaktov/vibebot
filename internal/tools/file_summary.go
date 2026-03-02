@@ -18,7 +18,7 @@ func RegisterFileSummary(registry *Registry, workspaceDir string) {
 			Type: "function",
 			Function: llm.Function{
 				Name:        "file_summary",
-				Description: "Get high-level file metadata without reading full contents. Supports Go, Python, JavaScript, TypeScript, Java, C, C++, Rust. Returns imports, exported symbols, function signatures, and type definitions. Saves tokens by providing structure instead of full code.",
+				Description: "Get file metadata without reading full contents. Returns imports, exported symbols, function signatures, type definitions.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{

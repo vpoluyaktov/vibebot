@@ -17,7 +17,7 @@ func RegisterIncrementalEdit(registry *Registry, workspaceDir string) {
 			Type: "function",
 			Function: llm.Function{
 				Name:        "incremental_edit",
-				Description: "Edit specific line ranges in a file without search/replace. More precise and token-efficient than edit_file. Specify exact line numbers to replace. Supports inserting, replacing, or deleting lines.",
+				Description: "Edit specific line ranges by line number. Supports inserting, replacing, or deleting lines.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{

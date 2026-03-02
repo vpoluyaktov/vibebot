@@ -45,7 +45,7 @@ func RegisterCachedGrep(registry *Registry, workspaceDir string) {
 			Type: "function",
 			Function: llm.Function{
 				Name:        "cached_grep",
-				Description: "Search for text patterns in files with intelligent caching. Returns line numbers and context snippets instead of full files. Caches results for 5 minutes to avoid redundant searches. Saves tokens by returning only relevant matches.",
+				Description: "Search for text patterns in files. Returns line numbers and context snippets. Caches results for 5 minutes.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -216,7 +216,7 @@ func performSearch(workspaceDir, query, filePattern string, contextLines int, ca
 
 			if strings.Contains(searchLine, searchQuery) {
 				relPath, _ := filepath.Rel(workspaceDir, path)
-				
+
 				// Get context lines
 				var context []string
 				start := i - contextLines
@@ -227,7 +227,7 @@ func performSearch(workspaceDir, query, filePattern string, contextLines int, ca
 				if end > len(lines) {
 					end = len(lines)
 				}
-				
+
 				for j := start; j < end; j++ {
 					if j == i {
 						context = append(context, fmt.Sprintf("> %4d | %s", j+1, lines[j]))
@@ -273,7 +273,7 @@ func isBinaryFile(path string) bool {
 
 func formatResults(results []SearchResult, query string, maxResults int, fromCache bool) string {
 	var output strings.Builder
-	
+
 	if fromCache {
 		output.WriteString(fmt.Sprintf("Found %d matches for '%s' (from cache):\n\n", len(results), query))
 	} else {

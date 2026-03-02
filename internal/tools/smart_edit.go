@@ -18,7 +18,7 @@ func RegisterSmartEdit(registry *Registry, workspaceDir string) {
 			Type: "function",
 			Function: llm.Function{
 				Name:        "smart_edit",
-				Description: "Context-aware editing for common patterns like adding imports, functions, etc. Automatically detects language and handles syntax correctly. Supports Go, Python, JavaScript, TypeScript, Java, C, C++, Rust.",
+				Description: "Context-aware editing for adding imports, functions, etc. Automatically detects language and handles syntax.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -93,7 +93,7 @@ func RegisterSmartEdit(registry *Registry, workspaceDir string) {
 			}
 
 			logger.Debug("smart_edit: performed %s on %s (%s)", operation, path, langName)
-			return fmt.Sprintf("Successfully performed %s on %s (%s)\nFile size: %d → %d bytes", 
+			return fmt.Sprintf("Successfully performed %s on %s (%s)\nFile size: %d → %d bytes",
 				operation, filepath.Base(path), langName, len(content), len(newContent)), nil
 		},
 	})
@@ -150,11 +150,11 @@ func addImportPython(content, importValue string) string {
 	}
 
 	lines := strings.Split(content, "\n")
-	
+
 	// Find the position after existing imports or at the top
 	insertPos := 0
 	lastImportPos := -1
-	
+
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "import ") || strings.HasPrefix(trimmed, "from ") {
@@ -182,11 +182,11 @@ func addImportJavaScript(content, importValue string) string {
 	}
 
 	lines := strings.Split(content, "\n")
-	
+
 	// Find position after existing imports
 	insertPos := 0
 	lastImportPos := -1
-	
+
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "import ") || strings.HasPrefix(trimmed, "const ") && strings.Contains(trimmed, "require(") {
@@ -212,12 +212,12 @@ func addImportJava(content, importValue string) string {
 	}
 
 	lines := strings.Split(content, "\n")
-	
+
 	// Find position after package declaration and existing imports
 	insertPos := 0
 	lastImportPos := -1
 	foundPackage := false
-	
+
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "package ") {
@@ -249,11 +249,11 @@ func addImportRust(content, importValue string) string {
 	}
 
 	lines := strings.Split(content, "\n")
-	
+
 	// Find position after existing use statements
 	insertPos := 0
 	lastUsePos := -1
-	
+
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "use ") {
@@ -279,11 +279,11 @@ func addImportC(content, importValue string) string {
 	}
 
 	lines := strings.Split(content, "\n")
-	
+
 	// Find position after existing includes
 	insertPos := 0
 	lastIncludePos := -1
-	
+
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "#include ") {

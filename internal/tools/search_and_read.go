@@ -18,7 +18,7 @@ func RegisterSearchAndRead(registry *Registry, workspaceDir string) {
 			Type: "function",
 			Function: llm.Function{
 				Name:        "search_and_read",
-				Description: "Search for files matching a pattern and read them in one operation. Can return full content, summaries, or outlines. Combines list_dir + grep + read_file into a single call. Use summary/outline modes to save tokens.",
+				Description: "Search for files matching a pattern and read them. Returns full content, summaries, or outlines based on mode.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -214,7 +214,7 @@ func getFileSummary(path, relPath string, includePrivate bool) (string, int) {
 
 	var summary strings.Builder
 	summary.WriteString(fmt.Sprintf("%s (%s)\n", relPath, lang.Name))
-	
+
 	if len(imports) > 0 {
 		summary.WriteString(fmt.Sprintf("  Imports: %d\n", len(imports)))
 	}

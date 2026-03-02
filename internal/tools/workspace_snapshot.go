@@ -17,7 +17,7 @@ func RegisterWorkspaceSnapshot(registry *Registry, workspaceDir string) {
 			Type: "function",
 			Function: llm.Function{
 				Name:        "workspace_snapshot",
-				Description: "Get a snapshot of workspace structure and key files. Useful for understanding project layout without multiple list_dir calls.",
+				Description: "Get workspace structure snapshot showing project layout and key files.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{

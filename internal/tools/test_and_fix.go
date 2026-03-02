@@ -15,7 +15,7 @@ func RegisterTestAndFix(registry *Registry, workspaceDir string) {
 			Type: "function",
 			Function: llm.Function{
 				Name:        "test_and_fix",
-				Description: "Run tests and report results. Useful for verifying changes work correctly. Note: This tool provides test command information; use 'exec' tool to actually run tests.",
+				Description: "Provides test command information for running tests. Use 'exec' to actually run tests.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{

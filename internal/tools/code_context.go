@@ -18,7 +18,7 @@ func RegisterCodeContext(registry *Registry, workspaceDir string) {
 			Type: "function",
 			Function: llm.Function{
 				Name:        "code_context",
-				Description: "Get relevant code context for a symbol/function using AST parsing. Returns definition, usages with line numbers and context. Supports Go, Python, JavaScript, TypeScript, Java, C, C++, Rust. Much more efficient than reading full files.",
+				Description: "Get code context for a symbol using AST parsing. Returns definition and usages with line numbers.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -105,11 +105,11 @@ func RegisterCodeContext(registry *Registry, workspaceDir string) {
 					if sym.Name == symbol {
 						relPath, _ := filepath.Rel(workspaceDir, path)
 						definitions = append(definitions, SymbolLocation{
-							FilePath:  relPath,
-							Symbol:    sym,
-							Content:   content,
-							IsDefn:    true,
-							Language:  lang.Name,
+							FilePath: relPath,
+							Symbol:   sym,
+							Content:  content,
+							IsDefn:   true,
+							Language: lang.Name,
 						})
 					}
 				}
@@ -150,7 +150,7 @@ func RegisterCodeContext(registry *Registry, workspaceDir string) {
 
 			// Format output
 			var output strings.Builder
-			
+
 			if len(definitions) == 0 && len(usages) == 0 {
 				return fmt.Sprintf("Symbol '%s' not found in workspace", symbol), nil
 			}
@@ -165,7 +165,7 @@ func RegisterCodeContext(registry *Registry, workspaceDir string) {
 					output.WriteString(fmt.Sprintf("Type: %s\n", def.Symbol.Type))
 					output.WriteString(fmt.Sprintf("Signature: %s\n", def.Symbol.Signature))
 					output.WriteString("\nDefinition:\n")
-					
+
 					defCode := extractDefinition(def.Content, def.Symbol.StartLine, def.Symbol.EndLine)
 					output.WriteString(defCode)
 					output.WriteString("\n---\n\n")
@@ -213,13 +213,13 @@ type SymbolLocation struct {
 
 func isTestFile(path string) bool {
 	base := filepath.Base(path)
-	return strings.Contains(base, "_test.") || strings.Contains(base, ".test.") || 
-	       strings.Contains(base, "_spec.") || strings.Contains(base, ".spec.")
+	return strings.Contains(base, "_test.") || strings.Contains(base, ".test.") ||
+		strings.Contains(base, "_spec.") || strings.Contains(base, ".spec.")
 }
 
 func extractContextLines(lines []string, lineIdx, contextSize int) []string {
 	var result []string
-	
+
 	start := lineIdx - contextSize
 	if start < 0 {
 		start = 0

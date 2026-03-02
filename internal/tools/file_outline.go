@@ -19,7 +19,7 @@ func RegisterFileOutline(registry *Registry, workspaceDir string) {
 			Type: "function",
 			Function: llm.Function{
 				Name:        "file_outline",
-				Description: "Get hierarchical structure view of a file showing classes, methods, functions with line numbers. Navigate large files efficiently without reading full content. Saves tokens by showing only structure. Supports Go, Python, JavaScript, TypeScript, Java, C, C++, Rust.",
+				Description: "Get hierarchical structure of a file showing classes, methods, functions with line numbers.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -137,7 +137,7 @@ func renderSymbol(output *strings.Builder, sym parser.Symbol, depth int, maxDept
 
 	indent := strings.Repeat("  ", depth)
 	icon := getSymbolIcon(sym.Type)
-	
+
 	// Format the symbol
 	var exported string
 	if sym.IsExported {
@@ -188,10 +188,10 @@ func extractReceiverType(receiver string) string {
 	// Examples: "(u *User)", "(*User)", "(User)"
 	receiver = strings.TrimSpace(receiver)
 	receiver = strings.Trim(receiver, "()")
-	
+
 	// Remove pointer indicator
 	receiver = strings.TrimPrefix(receiver, "*")
-	
+
 	// Split by space and take last part
 	parts := strings.Fields(receiver)
 	if len(parts) > 0 {
@@ -199,6 +199,6 @@ func extractReceiverType(receiver string) string {
 		typeName = strings.TrimPrefix(typeName, "*")
 		return typeName
 	}
-	
+
 	return receiver
 }
