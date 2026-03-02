@@ -78,6 +78,73 @@ Follow the output format exactly as specified. Be concise and extract only truly
 	return result, nil
 }
 
+const (
+	consolidationTaskInstructions = `## Your Task
+
+1. Summarize the conversation in 2-3 paragraphs
+2. Extract important facts that should be remembered long-term
+3. Categorize facts as either:
+   - **GLOBAL**: ONLY user preferences, timezone, name, cross-cutting concerns
+   - **PROJECT**: Everything specific to the current project
+
+**CRITICAL RULES FOR FACT CATEGORIZATION:**
+- If a fact mentions the project name, code location, architecture, APIs, dependencies → PROJECT
+- If a fact is about how THIS specific codebase works → PROJECT
+- If a fact would NOT apply to other projects → PROJECT
+- GLOBAL facts are RARE - only user info and universal preferences
+
+**Examples of GLOBAL facts:**
+- User's name is Vladimir
+- User prefers Pacific timezone
+- User prefers automatic task resumption
+
+**Examples of PROJECT facts (NOT global):**
+- Code location: /mnt/hostgit/projectname
+- Uses OpenRouter API for LLM calls
+- Session architecture stores 50 messages
+- Written in Go with systemd service
+- Any technical implementation details
+
+**For project analysis conversations**, extract comprehensive information:
+- Project purpose/description (what it does, main goals)
+- Technical stack (languages, frameworks, key dependencies)
+- Architecture (structure, components, design patterns)
+- Key features and capabilities
+- Current status (production-ready, in-development, etc.)
+- Important technical decisions or constraints
+`
+
+	consolidationOutputFormat = `## Output Format
+
+Provide your response in the following format:
+
+### SUMMARY
+[2-3 paragraph summary of the conversation]
+
+### PROJECT_DESCRIPTION
+[1-2 sentence description of what the project does - only for project analysis conversations]
+
+### PROJECT_STATUS
+[Project status: Production-ready / In Development / Prototype / etc. - only for project analysis]
+
+### PROJECT_FOCUS
+[What the project is currently focused on - only for project analysis]
+
+### GLOBAL_FACTS
+- [Fact 1]
+- [Fact 2]
+...
+
+### PROJECT_FACTS
+- [Fact 1]
+- [Fact 2]
+...
+
+If there are no facts in a category, write "None" under that section.
+For non-project-analysis conversations, leave PROJECT_DESCRIPTION, PROJECT_STATUS, and PROJECT_FOCUS as "None".
+`
+)
+
 // buildConsolidationPrompt creates the prompt for LLM consolidation
 func (c *Consolidator) buildConsolidationPrompt(messages []llm.Message, projectName string) string {
 	var sb strings.Builder
@@ -103,55 +170,9 @@ func (c *Consolidator) buildConsolidationPrompt(messages []llm.Message, projectN
 		sb.WriteString("No active project\n\n")
 	}
 
-	sb.WriteString("## Your Task\n\n")
-	sb.WriteString("1. Summarize the conversation in 2-3 paragraphs\n")
-	sb.WriteString("2. Extract important facts that should be remembered long-term\n")
-	sb.WriteString("3. Categorize facts as either:\n")
-	sb.WriteString("   - **GLOBAL**: ONLY user preferences, timezone, name, cross-cutting concerns\n")
-	sb.WriteString("   - **PROJECT**: Everything specific to the current project\n\n")
-	sb.WriteString("**CRITICAL RULES FOR FACT CATEGORIZATION:**\n")
-	sb.WriteString("- If a fact mentions the project name, code location, architecture, APIs, dependencies → PROJECT\n")
-	sb.WriteString("- If a fact is about how THIS specific codebase works → PROJECT\n")
-	sb.WriteString("- If a fact would NOT apply to other projects → PROJECT\n")
-	sb.WriteString("- GLOBAL facts are RARE - only user info and universal preferences\n\n")
-	sb.WriteString("**Examples of GLOBAL facts:**\n")
-	sb.WriteString("- User's name is Vladimir\n")
-	sb.WriteString("- User prefers Pacific timezone\n")
-	sb.WriteString("- User prefers automatic task resumption\n\n")
-	sb.WriteString("**Examples of PROJECT facts (NOT global):**\n")
-	sb.WriteString("- Code location: /mnt/hostgit/projectname\n")
-	sb.WriteString("- Uses OpenRouter API for LLM calls\n")
-	sb.WriteString("- Session architecture stores 50 messages\n")
-	sb.WriteString("- Written in Go with systemd service\n")
-	sb.WriteString("- Any technical implementation details\n\n")
-	sb.WriteString("**For project analysis conversations**, extract comprehensive information:\n")
-	sb.WriteString("- Project purpose/description (what it does, main goals)\n")
-	sb.WriteString("- Technical stack (languages, frameworks, key dependencies)\n")
-	sb.WriteString("- Architecture (structure, components, design patterns)\n")
-	sb.WriteString("- Key features and capabilities\n")
-	sb.WriteString("- Current status (production-ready, in-development, etc.)\n")
-	sb.WriteString("- Important technical decisions or constraints\n\n")
-
-	sb.WriteString("## Output Format\n\n")
-	sb.WriteString("Provide your response in the following format:\n\n")
-	sb.WriteString("### SUMMARY\n")
-	sb.WriteString("[2-3 paragraph summary of the conversation]\n\n")
-	sb.WriteString("### PROJECT_DESCRIPTION\n")
-	sb.WriteString("[1-2 sentence description of what the project does - only for project analysis conversations]\n\n")
-	sb.WriteString("### PROJECT_STATUS\n")
-	sb.WriteString("[Project status: Production-ready / In Development / Prototype / etc. - only for project analysis]\n\n")
-	sb.WriteString("### PROJECT_FOCUS\n")
-	sb.WriteString("[What the project is currently focused on - only for project analysis]\n\n")
-	sb.WriteString("### GLOBAL_FACTS\n")
-	sb.WriteString("- [Fact 1]\n")
-	sb.WriteString("- [Fact 2]\n")
-	sb.WriteString("...\n\n")
-	sb.WriteString("### PROJECT_FACTS\n")
-	sb.WriteString("- [Fact 1]\n")
-	sb.WriteString("- [Fact 2]\n")
-	sb.WriteString("...\n\n")
-	sb.WriteString("If there are no facts in a category, write \"None\" under that section.\n")
-	sb.WriteString("For non-project-analysis conversations, leave PROJECT_DESCRIPTION, PROJECT_STATUS, and PROJECT_FOCUS as \"None\".\n")
+	sb.WriteString(consolidationTaskInstructions)
+	sb.WriteString("\n")
+	sb.WriteString(consolidationOutputFormat)
 
 	return sb.String()
 }
