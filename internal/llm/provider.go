@@ -22,9 +22,10 @@ type ToolCall struct {
 
 // TokenUsage represents token consumption stats
 type TokenUsage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
+	PromptTokens     int     `json:"prompt_tokens"`
+	CompletionTokens int     `json:"completion_tokens"`
+	TotalTokens      int     `json:"total_tokens"`
+	Credits          float64 `json:"credits,omitempty"` // Cost in credits (from X-OpenRouter-Usage header)
 }
 
 // Response represents an LLM response
