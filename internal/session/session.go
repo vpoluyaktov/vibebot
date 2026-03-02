@@ -22,6 +22,7 @@ type Session struct {
 	CreatedAt        time.Time     `json:"created_at"`
 	UpdatedAt        time.Time     `json:"updated_at"`
 	LastConsolidated int           `json:"last_consolidated"`
+	LastCredits      float64       `json:"last_credits"` // Last known credit balance
 	mu               sync.RWMutex
 }
 
@@ -332,6 +333,23 @@ func (s *Session) GetShowStats() bool {
 	defer s.mu.RUnlock()
 
 	return s.ShowStats
+}
+
+// SetLastCredits sets the last known credit balance
+func (s *Session) SetLastCredits(credits float64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.LastCredits = credits
+	s.UpdatedAt = time.Now()
+}
+
+// GetLastCredits returns the last known credit balance
+func (s *Session) GetLastCredits() float64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.LastCredits
 }
 
 // GetAllChatIDs returns all chat IDs that have sessions

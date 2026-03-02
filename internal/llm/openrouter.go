@@ -91,7 +91,7 @@ func (o *OpenRouter) Chat(ctx context.Context, messages []Message, tools []Tool)
 	o.mu.RLock()
 	currentModel := o.model
 	o.mu.RUnlock()
-	
+
 	// Convert messages to generic format
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -248,4 +248,43 @@ func (o *OpenRouter) FetchModelContextLengths(ctx context.Context, modelIDs []st
 	}
 
 	return contextLengths, nil
+}
+
+// FetchCredits fetches the current credit balance from OpenRouter
+func (o *OpenRouter) FetchCredits(ctx context.Context) (float64, error) {
+	creditsURL := "https://openrouter.ai/api/v1/credits"
+
+	req, err := http.NewRequestWithContext(ctx, "GET", creditsURL, nil)
+	if err != nil {
+		return 0, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+o.apiKey)
+
+	resp, err := o.client.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("failed to fetch credits: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return 0, fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var creditsResp struct {
+		Data struct {
+			TotalCredits float64 `json:"total_credits"`
+			TotalUsage   float64 `json:"total_usage"`
+		} `json:"data"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&creditsResp); err != nil {
+		return 0, fmt.Errorf("failed to parse credits response: %w", err)
+	}
+
+	// Calculate remaining credits
+	remainingCredits := creditsResp.Data.TotalCredits - creditsResp.Data.TotalUsage
+
+	return remainingCredits, nil
 }

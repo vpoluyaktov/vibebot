@@ -1,11 +1,12 @@
 package agent
 
 import (
-	"github.com/vpoluyaktov/vibebot/internal/tasks"
 	"context"
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/vpoluyaktov/vibebot/internal/tasks"
 
 	"github.com/vpoluyaktov/vibebot/internal/consolidation"
 	"github.com/vpoluyaktov/vibebot/internal/llm"
@@ -141,6 +142,19 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 
 	// Get or create session for this chat
 	sess := a.sessions.GetOrCreate(chatID)
+
+	// Fetch current credits before processing (for diff calculation)
+	var previousCredits float64
+	if openRouter, ok := a.llm.(*llm.OpenRouter); ok {
+		if credits, err := openRouter.FetchCredits(ctx); err == nil {
+			previousCredits = credits
+			logger.Debug("Current credit balance before processing: $%.4f", previousCredits)
+		} else {
+			// Use last known credits if fetch fails
+			previousCredits = sess.GetLastCredits()
+			logger.Warn("Failed to fetch current credits, using last known: $%.4f (error: %v)", previousCredits, err)
+		}
+	}
 
 	// Add user message to session
 	sess.AddMessage(llm.Message{
@@ -303,7 +317,7 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 		Content: finalResponse,
 	})
 
-	// Save session to disk
+	// Save session
 	if err := a.sessions.Save(sess); err != nil {
 		logger.Warn("Failed to save session: %v", err)
 	}
@@ -339,6 +353,23 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 		finalResponse += fmt.Sprintf("\n🔧 Tools used: %s", strings.Join(toolList, ", "))
 	}
 
+	// Fetch current credits after processing (for diff calculation)
+	var currentCredits float64
+	var creditDiff float64
+	var creditsAvailable bool
+	if openRouter, ok := a.llm.(*llm.OpenRouter); ok {
+		if credits, err := openRouter.FetchCredits(ctx); err == nil {
+			currentCredits = credits
+			creditDiff = previousCredits - currentCredits
+			creditsAvailable = true
+			sess.SetLastCredits(currentCredits)
+			logger.Debug("Current credit balance after processing: $%.4f (diff: $%.6f)", currentCredits, creditDiff)
+		} else {
+			logger.Warn("Failed to fetch current credits after processing: %v", err)
+			creditsAvailable = false
+		}
+	}
+
 	// Append token usage and context window stats to final response if enabled
 	if sess.GetShowStats() {
 		contextSize := len(sess.GetHistory(maxHistoryMessages))
@@ -346,22 +377,33 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 		// Build stats string with token usage, credits, and context percentage
 		var tokenStats string
 		contextLength := a.modelManager.GetContextLength()
-		
-		// Format credits display - always show credit info
+
+		// Format credits display with diff tracking
 		creditsStr := ""
-		if totalCredits >= 0.01 {
-			creditsStr = fmt.Sprintf("\n| Credits: $%.4f", totalCredits)
-		} else if totalCredits > 0 {
-			// For very small amounts, use more precision
-			creditsStr = fmt.Sprintf("\n| Credits: $%.6f", totalCredits)
+		if creditsAvailable {
+			// Display credit diff (cost of this request)
+			if creditDiff >= 0.01 {
+				creditsStr = fmt.Sprintf("\n| Credits used: $%.4f\n| Balance: $%.2f", creditDiff, currentCredits)
+			} else if creditDiff > 0 {
+				// For very small amounts, use more precision
+				creditsStr = fmt.Sprintf("\n| Credits used: $%.6f\n| Balance: $%.2f", creditDiff, currentCredits)
+			} else {
+				// Zero cost (shouldn't happen, but handle it)
+				creditsStr = fmt.Sprintf("\n| Credits used: $0.000000\n| Balance: $%.2f", currentCredits)
+			}
 		} else {
-			// Show $0 to indicate credit tracking is available
-			creditsStr = "\n| Credits: $0.000000"
+			// Fallback to totalCredits from X-OpenRouter-Usage header if available
+			if totalCredits >= 0.01 {
+				creditsStr = fmt.Sprintf("\n| Credits used: $%.4f", totalCredits)
+			} else if totalCredits > 0 {
+				creditsStr = fmt.Sprintf("\n| Credits used: $%.6f", totalCredits)
+			} else {
+				creditsStr = "\n| Credits used: $0.000000"
+			}
 		}
-		
+
 		if contextLength > 0 {
-			// Calculate percentage of context window used
-			percentage := float64(totalPromptTokens) / float64(contextLength) * 100
+			percentage := float64(totalTokens) / float64(contextLength) * 100
 			tokenStats = fmt.Sprintf("\n📊 Tokens: %s prompt + %s completion = %s total\n| Context: %.1f%%\n| History: %d/%d msgs%s",
 				formatNumber(totalPromptTokens),
 				formatNumber(totalCompletionTokens),
@@ -381,6 +423,11 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 				creditsStr)
 		}
 		finalResponse += tokenStats
+	}
+
+	// Save session with updated credit balance
+	if err := a.sessions.Save(sess); err != nil {
+		logger.Warn("Failed to save session after updating credits: %v", err)
 	}
 
 	return finalResponse, nil
@@ -1178,34 +1225,33 @@ func (a *Agent) handleStatsCallback(chatID int64) (string, error) {
 		emoji, status, map[bool]string{true: "", false: "not "}[newValue]), nil
 }
 
-
 // ResumeTask resumes a task when timer expires
 func (a *Agent) ResumeTask(ctx context.Context, chatID int64, taskContext string) error {
 	logger.Info("Resuming task for chat %d: %s", chatID, taskContext)
-	
+
 	// Get session
 	sess := a.sessions.GetOrCreate(chatID)
-	
+
 	// Add task context as a system message to guide the LLM
 	systemMsg := fmt.Sprintf("A timer you set has expired. Task context: %s\n\nPlease check on this task and report the results to the user.", taskContext)
-	
+
 	// Add user message to session
 	sess.AddMessage(llm.Message{
 		Role:    "user",
 		Content: systemMsg,
 	})
-	
+
 	// Process the message
 	response, err := a.ProcessMessage(ctx, chatID, systemMsg)
 	if err != nil {
 		logger.Error("Failed to process task resumption for chat %d: %v", chatID, err)
 		return err
 	}
-	
+
 	// Send notification to user
 	if a.progressCallback != nil {
 		a.progressCallback(chatID, response, false)
 	}
-	
+
 	return nil
 }
