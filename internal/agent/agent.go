@@ -858,6 +858,12 @@ func (a *Agent) showProjectList(chatID int64) (string, error) {
 				Text:         "❌ Delete Current Project",
 				CallbackData: "project:delete",
 			}})
+
+			// Add "Clean Current Project" button
+			keyboard = append(keyboard, []telegram.InlineButton{{
+				Text:         "🧹 Clean Current Project",
+				CallbackData: "project:clean",
+			}})
 		}
 
 		if err := a.keyboardSender.SendMessageWithKeyboard(chatID, response.String(), keyboard); err != nil {
@@ -1164,6 +1170,29 @@ func (a *Agent) handleProjectCallback(chatID int64, value string) (string, error
 			logger.Info("Deleted project '%s' and switched to global context (chat %d) via callback", currentProject, chatID)
 			return fmt.Sprintf("✅ Project `%s` deleted!\n\nNo other projects available. Using global context.", currentProject), nil
 		}
+	}
+
+	// Handle "clean" command - reset current project memory to template
+	if value == "clean" {
+		currentProject := sess.GetProject()
+		if currentProject == "" {
+			return "❌ No active project to clean!", nil
+		}
+
+		// Clean project memory (creates backup automatically)
+		backupPath, err := a.memory.CleanProject(currentProject)
+		if err != nil {
+			return fmt.Sprintf("❌ Error cleaning project: %v", err), nil
+		}
+
+		// Clear session to start fresh
+		sess.Clear()
+		if err := a.sessions.Save(sess); err != nil {
+			logger.Warn("Failed to save session after cleaning project: %v", err)
+		}
+
+		logger.Info("Cleaned project memory for '%s' (chat %d) via callback, backup: %s", currentProject, chatID, backupPath)
+		return fmt.Sprintf("✅ Project `%s` memory reset to template!\n\n📦 Backup saved: `%s`\n\n💡 The project is still active. Start adding fresh context.", currentProject, filepath.Base(backupPath)), nil
 	}
 
 	// Handle project switch
