@@ -415,6 +415,23 @@ func (m *Memory) CleanProject(projectName string) (string, error) {
 		return "", fmt.Errorf("failed to read project file: %w", err)
 	}
 
+	// Extract location from current content if it exists
+	location := ""
+	contentStr := string(currentContent)
+	// Look for "Go code location:" or "Code location:" or "Location:" in Key Facts
+	locationPatterns := []string{
+		`(?m)^- Go code location: (.+)$`,
+		`(?m)^- Code location: (.+)$`,
+		`(?m)^- Location: (.+)$`,
+	}
+	for _, pattern := range locationPatterns {
+		re := regexp.MustCompile(pattern)
+		if matches := re.FindStringSubmatch(contentStr); len(matches) > 1 {
+			location = strings.TrimSpace(matches[1])
+			break
+		}
+	}
+
 	// Create backup with timestamp
 	timestamp := time.Now().UTC().Format("2006-01-02_15-04-05")
 	backupPath := fmt.Sprintf("%s.backup_%s", projectPath, timestamp)
@@ -422,8 +439,13 @@ func (m *Memory) CleanProject(projectName string) (string, error) {
 		return "", fmt.Errorf("failed to create backup: %w", err)
 	}
 
-	// Create fresh template
+	// Create fresh template with preserved location
 	timestampDisplay := time.Now().UTC().Format("2006-01-02 15:04:05 UTC")
+	locationLine := ""
+	if location != "" {
+		locationLine = fmt.Sprintf("\n- Location: %s", location)
+	}
+
 	template := fmt.Sprintf(`# Project: %s
 
 ## Description
@@ -434,7 +456,7 @@ Active
 
 ## Key Facts
 - Cleaned: %s
-- Previous backup: %s
+- Previous backup: %s%s
 
 ## Current Focus
 [What you're currently working on]
@@ -446,7 +468,7 @@ Active
 - [Related documentation]
 - [Issue trackers]
 - [Deployment URLs]
-`, projectName, timestampDisplay, filepath.Base(backupPath))
+`, projectName, timestampDisplay, filepath.Base(backupPath), locationLine)
 
 	// Write fresh template
 	if err := os.WriteFile(projectPath, []byte(template), 0644); err != nil {
