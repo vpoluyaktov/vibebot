@@ -52,6 +52,7 @@ Users can work on multiple projects with isolated context:
 - **/project <name>** - Switch to existing project
 - **/project delete <name>** - Delete a project (cannot delete active project)
 - **/project clear** - Clear current project (return to global context only)
+- **/project clean** - Reset current project memory to template (creates backup)
 
 When a project is active:
 - You have access to BOTH GlobalMemory and project-specific memory

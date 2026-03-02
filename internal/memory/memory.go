@@ -395,3 +395,63 @@ func (m *Memory) AppendConsolidationSummary(summary string, projectName string) 
 
 	return m.AppendHistory(entry.String())
 }
+
+// CleanProject resets a project memory to template, creating a backup first
+func (m *Memory) CleanProject(projectName string) (string, error) {
+	if err := m.ValidateProjectName(projectName); err != nil {
+		return "", err
+	}
+
+	projectPath := m.GetProjectPath(projectName)
+
+	// Check if project exists
+	if _, err := os.Stat(projectPath); os.IsNotExist(err) {
+		return "", fmt.Errorf("project '%s' does not exist", projectName)
+	}
+
+	// Read current content for backup
+	currentContent, err := os.ReadFile(projectPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read project file: %w", err)
+	}
+
+	// Create backup with timestamp
+	timestamp := time.Now().UTC().Format("2006-01-02_15-04-05")
+	backupPath := fmt.Sprintf("%s.backup_%s", projectPath, timestamp)
+	if err := os.WriteFile(backupPath, currentContent, 0644); err != nil {
+		return "", fmt.Errorf("failed to create backup: %w", err)
+	}
+
+	// Create fresh template
+	timestampDisplay := time.Now().UTC().Format("2006-01-02 15:04:05 UTC")
+	template := fmt.Sprintf(`# Project: %s
+
+## Description
+[Brief project description]
+
+## Status
+Active
+
+## Key Facts
+- Cleaned: %s
+- Previous backup: %s
+
+## Current Focus
+[What you're currently working on]
+
+## Notes
+[Detailed project-specific context, decisions, architecture notes, etc.]
+
+## Links
+- [Related documentation]
+- [Issue trackers]
+- [Deployment URLs]
+`, projectName, timestampDisplay, filepath.Base(backupPath))
+
+	// Write fresh template
+	if err := os.WriteFile(projectPath, []byte(template), 0644); err != nil {
+		return "", fmt.Errorf("failed to write clean template: %w", err)
+	}
+
+	return backupPath, nil
+}

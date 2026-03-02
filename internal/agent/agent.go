@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -113,7 +114,8 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 			"/project create <name> - Create new project\n" +
 			"/project <name> - Switch to project\n" +
 			"/project delete <name> - Delete project\n" +
-			"/project clear - Clear current project\n\n" +
+			"/project clear - Clear current project\n" +
+			"/project clean - Reset current project memory to template\n\n" +
 			"**Display Options:**\n" +
 			"/verbose - Toggle tool usage display (On/Off)\n" +
 			"/stats - Toggle token stats display (On/Off)\n\n" +
@@ -735,6 +737,29 @@ func (a *Agent) handleProjectCommand(chatID int64, message string) (string, erro
 
 		logger.Info("Cleared project context for chat %d (was: %s)", chatID, currentProject)
 		return fmt.Sprintf("✅ Cleared project `%s`\n\nNow using global context only.", currentProject), nil
+	}
+
+	// Handle /project clean - reset current project memory to template
+	if subcommand == "clean" {
+		currentProject := sess.GetProject()
+		if currentProject == "" {
+			return "❌ No active project to clean!\n\nUse `/project <name>` to switch to a project first.", nil
+		}
+
+		// Clean project memory (creates backup automatically)
+		backupPath, err := a.memory.CleanProject(currentProject)
+		if err != nil {
+			return fmt.Sprintf("❌ Error cleaning project: %v", err), nil
+		}
+
+		// Clear session to start fresh
+		sess.Clear()
+		if err := a.sessions.Save(sess); err != nil {
+			logger.Warn("Failed to save session after cleaning project: %v", err)
+		}
+
+		logger.Info("Cleaned project memory for '%s' (chat %d), backup: %s", currentProject, chatID, backupPath)
+		return fmt.Sprintf("✅ Project `%s` memory reset to template!\n\n📦 Backup saved: `%s`\n\n💡 The project is still active. Start adding fresh context.", currentProject, filepath.Base(backupPath)), nil
 	}
 
 	// Handle /project <name> - switch to project
