@@ -418,8 +418,9 @@ func (m *Memory) CleanProject(projectName string) (string, error) {
 	// Extract location from current content if it exists
 	location := ""
 	contentStr := string(currentContent)
-	// Look for "Go code location:" or "Code location:" or "Location:" in Key Facts
+	// Look for "Project location:", "Go code location:", "Code location:", or "Location:" in Key Facts
 	locationPatterns := []string{
+		`(?m)^- Project location: (.+)$`,
 		`(?m)^- Go code location: (.+)$`,
 		`(?m)^- Code location: (.+)$`,
 		`(?m)^- Location: (.+)$`,
