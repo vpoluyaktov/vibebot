@@ -137,6 +137,18 @@ func (o *OpenRouter) Chat(ctx context.Context, messages []Message, tools []Tool)
 	}
 	defer resp.Body.Close()
 
+	// Extract credit usage from X-OpenRouter-Usage header
+	var credits float64
+	if usageHeader := resp.Header.Get("X-OpenRouter-Usage"); usageHeader != "" {
+		// Parse JSON header: {"credits": 0.0015}
+		var usageData struct {
+			Credits float64 `json:"credits"`
+		}
+		if err := json.Unmarshal([]byte(usageHeader), &usageData); err == nil {
+			credits = usageData.Credits
+		}
+	}
+
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		// Return error as content for graceful handling (matches nanobot behavior)
@@ -172,6 +184,7 @@ func (o *OpenRouter) Chat(ctx context.Context, messages []Message, tools []Tool)
 			PromptTokens:     orResp.Usage.PromptTokens,
 			CompletionTokens: orResp.Usage.CompletionTokens,
 			TotalTokens:      orResp.Usage.TotalTokens,
+			Credits:          credits,
 		},
 	}, nil
 }

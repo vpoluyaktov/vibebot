@@ -198,6 +198,7 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 	// Agent loop: handle tool calls iteratively
 	var finalResponse string
 	var totalPromptTokens, totalCompletionTokens, totalTokens int
+	var totalCredits float64
 	var toolsUsed []string
 	for i := 0; i < maxToolIterations; i++ {
 		logger.Debug("Agent loop iteration %d/%d", i+1, maxToolIterations)
@@ -211,10 +212,11 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 			logger.Error("Unexpected LLM error (iteration %d): %v", i+1, err)
 			return fmt.Sprintf("⚠️ Unexpected error: %v", err), err
 		}
-		// Track token usage
+		// Track token usage and credits
 		totalPromptTokens += response.Usage.PromptTokens
 		totalCompletionTokens += response.Usage.CompletionTokens
 		totalTokens += response.Usage.TotalTokens
+		totalCredits += response.Usage.Credits
 
 		logger.Debug("LLM response: content_len=%d, tool_calls=%d, finish_reason=%s, tokens=%d", len(response.Content), len(response.ToolCalls), response.FinishReason, response.Usage.TotalTokens)
 
@@ -341,27 +343,41 @@ func (a *Agent) ProcessMessage(ctx context.Context, chatID int64, message string
 	if sess.GetShowStats() {
 		contextSize := len(sess.GetHistory(maxHistoryMessages))
 
-		// Build stats string with token usage and context percentage
+		// Build stats string with token usage, credits, and context percentage
 		var tokenStats string
 		contextLength := a.modelManager.GetContextLength()
+		
+		// Format credits display
+		creditsStr := ""
+		if totalCredits > 0 {
+			if totalCredits >= 0.01 {
+				creditsStr = fmt.Sprintf("\n| Credits: $%.4f", totalCredits)
+			} else {
+				// For very small amounts, use scientific notation
+				creditsStr = fmt.Sprintf("\n| Credits: $%.6f", totalCredits)
+			}
+		}
+		
 		if contextLength > 0 {
 			// Calculate percentage of context window used
 			percentage := float64(totalPromptTokens) / float64(contextLength) * 100
-			tokenStats = fmt.Sprintf("\n📊 Tokens: %s prompt + %s completion = %s total\n| Context: %.1f%%\n| History: %d/%d msgs",
+			tokenStats = fmt.Sprintf("\n📊 Tokens: %s prompt + %s completion = %s total\n| Context: %.1f%%\n| History: %d/%d msgs%s",
 				formatNumber(totalPromptTokens),
 				formatNumber(totalCompletionTokens),
 				formatNumber(totalTokens),
 				percentage,
 				contextSize,
-				maxHistoryMessages)
+				maxHistoryMessages,
+				creditsStr)
 		} else {
 			// Fallback if context length not available
-			tokenStats = fmt.Sprintf("\n📊 Tokens: %s prompt + %s completion = %s total\n| History: %d/%d msgs",
+			tokenStats = fmt.Sprintf("\n📊 Tokens: %s prompt + %s completion = %s total\n| History: %d/%d msgs%s",
 				formatNumber(totalPromptTokens),
 				formatNumber(totalCompletionTokens),
 				formatNumber(totalTokens),
 				contextSize,
-				maxHistoryMessages)
+				maxHistoryMessages,
+				creditsStr)
 		}
 		finalResponse += tokenStats
 	}
