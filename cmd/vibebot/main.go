@@ -174,6 +174,20 @@ func runGateway() {
 		cancel()
 	}()
 
+	// Send restart notifications to all users
+	logger.Info("Sending restart notifications...")
+	if chatIDs, err := sessionMgr.GetAllChatIDs(); err == nil {
+		for _, chatID := range chatIDs {
+			if err := tg.SendMessage(chatID, "🤖 vibebot service restarted and ready to use"); err != nil {
+				logger.Warn("Failed to send restart notification to chat %d: %v", chatID, err)
+			} else {
+				logger.Debug("Sent restart notification to chat %d", chatID)
+			}
+		}
+	} else {
+		logger.Warn("Failed to get chat IDs for restart notifications: %v", err)
+	}
+
 	// Start the gateway
 	logger.Info("Starting Telegram gateway...")
 	if err := tg.Start(ctx); err != nil && err != context.Canceled {
